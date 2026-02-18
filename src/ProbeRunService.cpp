@@ -118,13 +118,12 @@ void ProbeRunService::ensureWifiAndTime()
 
 bool ProbeRunService::wifiConnectSTA(uint32_t timeoutMs)
 {
-  String ssid = _prefs.getString("wifi_ssid", "");
-  String pass = _prefs.getString("wifi_pass", "");
-  if (ssid.length() == 0)
+  auto wifi = _prefs.loadWifi();
+  if (wifi.ssid.length() == 0)
     return false;
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid.c_str(), pass.c_str());
+  WiFi.begin(wifi.ssid.c_str(), wifi.password.c_str());
 
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && (millis() - start) < timeoutMs)
@@ -260,7 +259,10 @@ bool ProbeRunService::registerProbe()
   serializeJson(doc, body);
 
   WiFiClientSecure client;
-  client.setInsecure(); // you can switch to CA cert store later
+  String ca = _prefs.loadCaCertPem();
+  if (ca.length() == 0)
+    return false;
+  client.setCACert(ca.c_str());
 
   HTTPClient http;
   http.begin(client, url);
