@@ -1,60 +1,119 @@
+#if !defined(DEVICE_ROLE_PROBE) && !defined(DEVICE_ROLE_GATEWAY)
+#error "You must define DEVICE_ROLE_PROBE or DEVICE_ROLE_GATEWAY in build_flags"
+#endif
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 
 #include "../include/PreferenceService.h"
-#include "../include/MqttService.h"
 #include "../include/SetupService.h"
 #ifdef DEVICE_ROLE_PROBE
-#include "ProbeRunService.h"
+#include "../include/ProbeRunService.h"
 #else
+#include "../include/MqttService.h"
 #include "../include/RunService.h"
 #endif
 
-static const char* NVS_NS = "fluxspool";
+static const char *NVS_NS = "fluxspool";
 
 PreferenceService prefSvc(NVS_NS);
 WebServer httpServer(80);
 
-// MQTT service (host/port injected by RunService config)
-MqttService mqttSvc("mqtt.fluxspool.app", 8883);
-
 SetupService::Config setupCfg;
 SetupService setupSvc(prefSvc, httpServer, setupCfg);
 
+#ifdef DEVICE_ROLE_PROBE
+
+ProbeRunService::Config probeCfg;
+ProbeRunService runSvc(prefSvc, probeCfg);
+
+static bool g_runtimeStarted = false;
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(200);
+
+  prefSvc.begin(false);
+
+  if (setupSvc.isSetupComplete())
+  {
+    Serial.println("[BOOT] Setup complete -> starting probe runtime");
+    runSvc.begin();
+    g_runtimeStarted = true;
+  }
+  else
+  {
+    Serial.println("[BOOT] Setup required -> starting setup service");
+    setupSvc.begin();
+  }
+}
+
+void loop()
+{
+  if (setupSvc.isSetupComplete())
+  {
+    if (!g_runtimeStarted)
+    {
+      runSvc.begin();
+      g_runtimeStarted = true;
+    }
+    runSvc.loop();
+  }
+  else
+  {
+    setupSvc.loop();
+  }
+
+  delay(5);
+}
+#else
+
+MqttService mqttSvc("mqtt.fluxspool.app", 8883);
 RunService::Config runCfg;
 RunService runSvc(prefSvc, mqttSvc, runCfg);
 
 static bool g_runtimeStarted = false;
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   delay(200);
 
   prefSvc.begin(false);
 
   // Decide mode
-  if (setupSvc.isSetupComplete()) {
+  if (setupSvc.isSetupComplete())
+  {
     Serial.println("[BOOT] Setup complete -> starting runtime");
     runSvc.begin();
     g_runtimeStarted = true;
-  } else {
+  }
+  else
+  {
     Serial.println("[BOOT] Setup required -> starting setup service");
     setupSvc.begin();
   }
 }
 
-void loop() {
-  if (setupSvc.isSetupComplete()) {
-    if (!g_runtimeStarted) {
+void loop()
+{
+  if (setupSvc.isSetupComplete())
+  {
+    if (!g_runtimeStarted)
+    {
       // Setup just completed (or provisioned + reboot not used)
       runSvc.begin();
       g_runtimeStarted = true;
     }
     runSvc.loop();
-  } else {
+  }
+  else
+  {
     setupSvc.loop();
   }
 
   delay(5);
 }
+#endif

@@ -12,19 +12,22 @@
 // - Request/response matched by correlationId (16 bytes)
 // - Optional LMK encryption per peer (AES-128 as per ESP-NOW)
 
-class EspNowService {
+class EspNowService
+{
 public:
   static constexpr uint8_t MAX_PEERS = 64;
   static constexpr uint8_t MAX_QUEUE = 8;
 
-  struct Peer {
+  struct Peer
+  {
     uint8_t mac[6]{};
     uint8_t lmk[16]{};
     bool hasLmk = false;
     String deviceKey;
   };
 
-  struct TelemetryResponse {
+  struct TelemetryResponse
+  {
     bool ok = false;
     int32_t weight = 0;
     uint16_t variance = 0;
@@ -33,28 +36,29 @@ public:
     String uid;
   };
 
-  using TelemetryCallback = std::function<void(const TelemetryResponse&)>;
+  using TelemetryCallback = std::function<void(const TelemetryResponse &)>;
 
   EspNowService();
 
   bool begin();
   void loop();
 
-  void upsertPeer(const Peer& p);
+  void upsertPeer(const Peer &p);
   uint8_t peerCount() const { return _peerCount; }
 
   // correlationIdHex must be 32 hex chars.
   bool requestTelemetryByMac(const uint8_t mac[6],
-                             const String& correlationIdHex,
+                             const String &correlationIdHex,
                              TelemetryCallback cb,
                              uint32_t timeoutMs = 1200,
                              uint8_t retries = 1);
 
-  static bool parseMac(const String& s, uint8_t out[6]);
-  static bool hexTo16(const String& hex, uint8_t out[16]);
+  static bool parseMac(const String &s, uint8_t out[6]);
+  static bool hexTo16(const String &hex, uint8_t out[16]);
 
 private:
-  struct QueueItem {
+  struct QueueItem
+  {
     bool used = false;
     uint8_t mac[6]{};
     uint8_t corr[16]{};
@@ -63,7 +67,8 @@ private:
     uint8_t retries = 1;
   };
 
-  struct Pending {
+  struct Pending
+  {
     bool active = false;
     uint8_t mac[6]{};
     uint8_t corr[16]{};
@@ -73,15 +78,15 @@ private:
     uint8_t retriesLeft = 1;
   };
 
-  static void recvStatic(const uint8_t* mac, const uint8_t* data, int len);
-  void onRecv(const uint8_t* mac, const uint8_t* data, int len);
+  static void recvStatic(const uint8_t *mac, const uint8_t *data, int len);
+  void onRecv(const uint8_t *mac, const uint8_t *data, int len);
 
   void processQueue();
   void failPending();
   bool sendReq(const uint8_t mac[6]);
 
   bool addPeerIfNeeded(const uint8_t mac[6]);
-  bool findPeer(const uint8_t mac[6], Peer& out);
+  bool findPeer(const uint8_t mac[6], Peer &out);
 
 private:
   Peer _peers[MAX_PEERS];
@@ -90,5 +95,5 @@ private:
   QueueItem _queue[MAX_QUEUE];
   Pending _pending;
 
-  static EspNowService* _self;
+  static EspNowService *_self;
 };

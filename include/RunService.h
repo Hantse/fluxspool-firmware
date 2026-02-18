@@ -11,10 +11,12 @@
 // - Adds ESPNOW polling for probes on command: TelemetryDevice
 // - Does NOT change topic names; topics remain exactly as in V13.
 
-class RunService {
+class RunService
+{
 public:
-  struct Config {
-    const char* apiBase = "https://api.fluxspool.app";
+  struct Config
+  {
+    const char *apiBase = "https://api.fluxspool.app";
 
     // register retry while waiting confirm
     uint32_t registerRetryMs = 2000;
@@ -29,10 +31,10 @@ public:
 
     // espnow
     uint32_t espnowTimeoutMs = 1200;
-    uint8_t  espnowRetries = 1;
+    uint8_t espnowRetries = 1;
   };
 
-  RunService(PreferenceService& prefs, MqttService& mqtt, const Config& cfg);
+  RunService(PreferenceService &prefs, MqttService &mqtt, const Config &cfg);
 
   void begin();
   void loop();
@@ -47,7 +49,7 @@ private:
   bool tokenValidSoon() const;
   bool ensureValidToken();
   bool authRefresh();
-  bool httpPostJson(const String& url, const String& body, String& outResp, int& outCode);
+  bool httpPostJson(const String &url, const String &body, String &outResp, int &outCode);
 
   // mqtt
   void mqttBeginIfNeeded();
@@ -58,24 +60,24 @@ private:
   void publishTelemetryIfDue();
 
   // mqtt handlers
-  static void onRegisterConfirmStatic(char* topic, byte* payload, unsigned int length);
-  static void onCommandStatic(char* topic, byte* payload, unsigned int length);
-  static void onTopologyResultStatic(char* topic, byte* payload, unsigned int length);
+  static void onRegisterConfirmStatic(char *topic, byte *payload, unsigned int length);
+  static void onCommandStatic(char *topic, byte *payload, unsigned int length);
+  static void onTopologyResultStatic(char *topic, byte *payload, unsigned int length);
 
-  void onRegisterConfirm(char* topic, byte* payload, unsigned int length);
-  void onCommand(char* topic, byte* payload, unsigned int length);
-  void onTopologyResult(char* topic, byte* payload, unsigned int length);
+  void onRegisterConfirm(char *topic, byte *payload, unsigned int length);
+  void onCommand(char *topic, byte *payload, unsigned int length);
+  void onTopologyResult(char *topic, byte *payload, unsigned int length);
 
   // topics
-  String deviceKey() const; // auth_dkey
-  String topicOf(const char* suffix) const; // device/{deviceKey}/{suffix}
+  String deviceKey() const;                 // auth_dkey
+  String topicOf(const char *suffix) const; // device/{deviceKey}/{suffix}
 
   // topology -> espnow
   void loadTopologyFromNvs();
 
 private:
-  PreferenceService& _prefs;
-  MqttService& _mqtt;
+  PreferenceService &_prefs;
+  MqttService &_mqtt;
   Config _cfg;
 
   EspNowService _esp;
@@ -91,5 +93,5 @@ private:
   uint32_t _lastTokenCheckMs = 0;
 
   // static bridge for mqtt callbacks (PubSubClient style)
-  static RunService* _self;
+  static RunService *_self;
 };

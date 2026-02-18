@@ -5,14 +5,16 @@
 
 #include "PreferenceService.h"
 
-class SetupService {
+class SetupService
+{
 public:
-  struct Config {
-    const char* apSsid = "FluxSpool-Setup";
-    const char* apiBase = "https://api.fluxspool.app";
+  struct Config
+  {
+    const char *apSsid = "FluxSpool-Setup";
+    const char *apiBase = "https://api.fluxspool.app";
   };
 
-  SetupService(PreferenceService& prefs, WebServer& server, const Config& cfg);
+  SetupService(PreferenceService &prefs, WebServer &server, const Config &cfg);
 
   // Returns true when the device is ready to run runtime mode (STA creds + tokens, no pending codes)
   bool isSetupComplete() const;
@@ -31,11 +33,11 @@ private:
   bool ensureTimeSynced(uint32_t timeoutMs = 8000);
   bool authProvision();
 
-  static String readPayloadToString(const uint8_t* payload, size_t len);
+  static String readPayloadToString(const uint8_t *payload, size_t len);
 
 private:
-  PreferenceService& _prefs;
-  WebServer& _server;
+  PreferenceService &_prefs;
+  WebServer &_server;
   Config _cfg;
 
   bool _portalStarted = false;
