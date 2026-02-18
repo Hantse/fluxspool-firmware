@@ -184,15 +184,15 @@ bool ProbeRunService::authRefresh()
     return false;
   }
 
-  String devId = deviceId();
-  if (devId.length() == 0)
+  String deviceKey = deviceKey();
+  if (deviceKey.length() == 0)
   {
-    Serial.println("[PROBE] deviceId missing");
+    Serial.println("[PROBE] deviceKey missing");
     return false;
   }
 
   String url = String(_cfg.apiBase) + "/api/device/refreshtoken";
-  String body = String("{\"refreshToken\":\"") + refresh + "\",\"deviceId\":\"" + devId + "\"}";
+  String body = String("{\"refreshToken\":\"") + refresh + "\",\"deviceId\":\"" + deviceKey + "\"}";
 
   String resp;
   int code = 0;
@@ -240,8 +240,8 @@ bool ProbeRunService::authRefresh()
 bool ProbeRunService::registerProbe()
 {
   String access = _prefs.getAccessToken();
-  String devId = deviceId();
-  if (access.length() == 0 || devId.length() == 0)
+  String deviceKey = deviceKey();
+  if (access.length() == 0 || deviceKey.length() == 0)
     return false;
 
   String url = String(_cfg.apiBase) + "/api/device/register/probe";
@@ -249,11 +249,11 @@ bool ProbeRunService::registerProbe()
   // build request
   JsonDocument doc;
   doc["probeId"] = probeId();
-  doc["deviceId"] = devId;
+  doc["deviceId"] = deviceKey;
   doc["mac"] = WiFi.macAddress();
   doc["chipId"] = String((uint32_t)ESP.getEfuseMac(), HEX);
   doc["firmwareVersion"] = firmwareVersion();
-  doc["wifiSsid"] = _prefs.getString("wifi_ssid", "");
+  doc["wifiSsid"] = _prefs.loadWifi().ssid;
   doc["model"] = model();
 
   String body;
@@ -343,7 +343,6 @@ bool ProbeRunService::ensureEspNow()
 
 String ProbeRunService::probeId() const
 {
-  // stable id derived from MAC
   return String("probe-") + macNoSep();
 }
 
@@ -370,6 +369,19 @@ void ProbeRunService::onRxStatic(const uint8_t *mac, const uint8_t *data, int le
 
 void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
 {
-  Serial.printf("[PNOW][RX] len=%d\n", len);
-  // TODO: parse gateway commands (tare, telemetry request, etc.)
+  auto nowCfg = _prefs.loadProbeNowConfig();
+
+  uint8_t expected[6];
+  if (!ProbeNowLink::parseMac(nowCfg.gatewayMac, expected))
+  {
+    Serial.println("[PNOW][RX] drop: invalid stored gatewayMac");
+    return;
+  }
+
+  if (memcmp(mac, expected, 6) != 0)
+  {
+    return;
+  }
+
+  Serial.printf("[PNOW][RX] from gateway len=%d\n", len);
 }
