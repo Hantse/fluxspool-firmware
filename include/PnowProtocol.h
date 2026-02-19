@@ -18,6 +18,7 @@ namespace pnow
         CMD_TARE = 3,
         CMD_STATUS = 4,
         CMD_TELEMETRY = 5,
+        CMD_WRITE = 6, // reserved for future use (write NVS key/val)
 
         // Responses (Probe -> GW)
         RSP_ACK = 100,

@@ -544,6 +544,16 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
     break;
   }
 
+  case pnow::CMD_WRITE:
+  {
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
+    Serial.println("[PNOW] WRITE");
+
+    // TODO: implement write routine here
+
+    break;
+  }
+
   default:
     sendAck(h.seq, false, pnow::ERR_NOT_SUPPORTED, 0);
     break;
