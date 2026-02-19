@@ -304,7 +304,14 @@ bool ProbeRunService::registerProbe()
 bool ProbeRunService::httpPostJson(const String &url, const String &body, String &outResp, int &outCode)
 {
   WiFiClientSecure client;
-  client.setInsecure();
+  String ca = _prefs.loadCaCertPem();
+  if (ca.length() == 0)
+  {
+    Serial.println("[PROBE] No CA stored");
+    return false;
+  }
+  client.setCACert(ca.c_str());
+  client.setTimeout(15000);
 
   HTTPClient http;
   if (!http.begin(client, url))
