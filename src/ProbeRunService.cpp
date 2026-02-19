@@ -183,15 +183,15 @@ bool ProbeRunService::authRefresh()
     return false;
   }
 
-  String deviceKey = deviceKey();
-  if (deviceKey.length() == 0)
+  String devKey = deviceKey();
+  if (devKey.length() == 0)
   {
     Serial.println("[PROBE] deviceKey missing");
     return false;
   }
 
   String url = String(_cfg.apiBase) + "/api/device/refreshtoken";
-  String body = String("{\"refreshToken\":\"") + refresh + "\",\"deviceId\":\"" + deviceKey + "\"}";
+  String body = String("{\"refreshToken\":\"") + refresh + "\",\"deviceId\":\"" + devKey + "\"}";
 
   String resp;
   int code = 0;
@@ -239,8 +239,8 @@ bool ProbeRunService::authRefresh()
 bool ProbeRunService::registerProbe()
 {
   String access = _prefs.getAccessToken();
-  String deviceKey = deviceKey();
-  if (access.length() == 0 || deviceKey.length() == 0)
+  String devKey = deviceKey();
+  if (access.length() == 0 || devKey.length() == 0)
     return false;
 
   String url = String(_cfg.apiBase) + "/api/device/register/probe";
@@ -248,7 +248,7 @@ bool ProbeRunService::registerProbe()
   // build request
   JsonDocument doc;
   doc["probeId"] = probeId();
-  doc["deviceId"] = deviceKey;
+  doc["deviceId"] = devKey;
   doc["mac"] = WiFi.macAddress();
   doc["chipId"] = String((uint32_t)ESP.getEfuseMac(), HEX);
   doc["firmwareVersion"] = firmwareVersion();
@@ -355,7 +355,7 @@ String ProbeRunService::probeId() const
   return String("probe-") + macNoSep();
 }
 
-String ProbeRunService::deviceId() const
+String ProbeRunService::deviceKey() const
 {
   return _prefs.getDeviceKey();
 }
