@@ -18,7 +18,8 @@ void MqttService::begin(const char *caPem,
   }
   else
   {
-    _net.setInsecure(); // dev fallback
+    Serial.println("[MQTT] ERROR: No CA configured");
+    return; // ou fail dur
   }
 
   _net.setTimeout(socketTimeoutSec);
