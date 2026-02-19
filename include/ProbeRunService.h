@@ -50,6 +50,7 @@ private:
 
   static void onRxStatic(const uint8_t *mac, const uint8_t *data, int len);
   void onRx(const uint8_t *mac, const uint8_t *data, int len);
+  void sendAck(uint32_t seq, bool ok, uint8_t err, uint32_t arg);
 
 private:
   PreferenceService &_prefs;
@@ -60,6 +61,14 @@ private:
 
   uint32_t _lastTokenCheckMs = 0;
   uint32_t _nextRegisterMs = 0;
+
+  uint32_t _lastSeqSeen = 0;
+  uint32_t _lastCmdAtMs = 0;
+
+  // RESET two-step
+  bool _resetArmed = false;
+  uint32_t _resetNonce = 0;
+  uint32_t _resetArmedUntilMs = 0;
 
   ProbeNowLink _link;
   static ProbeRunService *_self;

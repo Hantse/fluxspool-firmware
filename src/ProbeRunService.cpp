@@ -1,4 +1,5 @@
 #include "ProbeRunService.h"
+#include "PnowProtocol.h"
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -376,21 +377,181 @@ void ProbeRunService::onRxStatic(const uint8_t *mac, const uint8_t *data, int le
     _self->onRx(mac, data, len);
 }
 
+static bool macEquals6(const uint8_t *a, const uint8_t *b)
+{
+  return memcmp(a, b, 6) == 0;
+}
+
+static uint32_t uptimeSeconds()
+{
+  return (uint32_t)(millis() / 1000UL);
+}
+
+void ProbeRunService::sendAck(uint32_t seq, bool ok, uint8_t err, uint32_t arg)
+{
+  uint8_t buf[sizeof(pnow::Header) + sizeof(pnow::AckPayload)];
+  pnow::Header h{};
+  h.v = pnow::PN_VERSION;
+  h.type = pnow::RSP_ACK;
+  h.len = sizeof(pnow::AckPayload);
+  h.seq = seq;
+  h.ts = 0;
+
+  pnow::AckPayload p{};
+  p.ok = ok ? 1 : 0;
+  p.err = err;
+  p.arg = arg;
+
+  memcpy(buf, &h, sizeof(h));
+  memcpy(buf + sizeof(h), &p, sizeof(p));
+
+  // write CRC
+  pnow::Header *ph = (pnow::Header *)buf;
+  ph->crc32 = pnow::compute_crc(*ph, buf + sizeof(pnow::Header));
+
+  _link.send(buf, sizeof(buf));
+}
+
 void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
 {
+  // ---- 0) Filter: accept only gateway MAC ----
   auto nowCfg = _prefs.loadProbeNowConfig();
-
   uint8_t expected[6];
   if (!ProbeNowLink::parseMac(nowCfg.gatewayMac, expected))
   {
-    Serial.println("[PNOW][RX] drop: invalid stored gatewayMac");
+    // invalid stored config -> ignore
     return;
   }
-
-  if (memcmp(mac, expected, 6) != 0)
+  if (!macEquals6(mac, expected))
   {
     return;
   }
 
-  Serial.printf("[PNOW][RX] from gateway len=%d\n", len);
+  // ---- 1) Validate header + CRC ----
+  pnow::Header h{};
+  const uint8_t *payload = nullptr;
+
+  // pnow::validate_basic returns false for version/len/crc errors,
+  // but we want to ACK error (if possible).
+  bool okBasic = pnow::validate_basic(data, len, h, payload);
+  if (!okBasic)
+  {
+    // best-effort parse header to respond; if even header isn't there, drop
+    if (len >= (int)sizeof(pnow::Header))
+    {
+      memcpy(&h, data, sizeof(pnow::Header));
+      uint8_t err = pnow::ERR_BAD_CRC;
+      if (h.v != pnow::PN_VERSION)
+        err = pnow::ERR_BAD_VERSION;
+      else if (h.len > pnow::PN_MAX_PAYLOAD)
+        err = pnow::ERR_BAD_LEN;
+      sendAck(h.seq, false, err, 0);
+    }
+    return;
+  }
+
+  // ---- 2) Anti-replay (seq must increase) ----
+  if (h.seq <= _lastSeqSeen)
+  {
+    sendAck(h.seq, false, pnow::ERR_REPLAY, _lastSeqSeen);
+    return;
+  }
+
+  // ---- 3) Rate limit (except STATUS) ----
+  uint32_t nowMs = millis();
+  if (h.type != pnow::CMD_STATUS)
+  {
+    if ((uint32_t)(nowMs - _lastCmdAtMs) < 200)
+    {
+      sendAck(h.seq, false, pnow::ERR_RATE_LIMIT, 0);
+      return;
+    }
+  }
+  _lastCmdAtMs = nowMs;
+  _lastSeqSeen = h.seq;
+
+  // ---- 4) Dispatch ----
+  switch ((pnow::MsgType)h.type)
+  {
+  case pnow::CMD_STATUS:
+  {
+    // ACK now; optionally follow with a STATUS packet later
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
+
+    // TODO: send a proper STATUS packet if you want richer info.
+    // Minimal example could be implemented as RSP_STATUS later.
+    Serial.printf("[PNOW] STATUS seq=%lu\n", (unsigned long)h.seq);
+    break;
+  }
+
+  case pnow::CMD_REBOOT:
+  {
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
+    Serial.println("[PNOW] REBOOT");
+    delay(200);
+    ESP.restart();
+    break;
+  }
+
+  case pnow::CMD_RESET:
+  {
+    // Two-step reset with nonce to prevent accidental wipe
+    if (h.len < sizeof(pnow::ResetPayload))
+    {
+      sendAck(h.seq, false, pnow::ERR_BAD_LEN, 0);
+      break;
+    }
+
+    pnow::ResetPayload rp{};
+    memcpy(&rp, payload, sizeof(rp));
+
+    uint32_t t = millis();
+    if (!_resetArmed || t > _resetArmedUntilMs || _resetNonce != rp.nonce)
+    {
+      // Arm
+      _resetArmed = true;
+      _resetNonce = rp.nonce;
+      _resetArmedUntilMs = t + 8000; // 8s window
+      sendAck(h.seq, true, pnow::ERR_OK, rp.nonce);
+      Serial.printf("[PNOW] RESET armed nonce=%lu\n", (unsigned long)rp.nonce);
+      break;
+    }
+
+    // Confirm (same nonce within window)
+    sendAck(h.seq, true, pnow::ERR_OK, rp.nonce);
+    Serial.println("[PNOW] RESET confirmed -> clear prefs + reboot");
+
+    _prefs.clearAll(); // <-- implement / or call your typed "factoryReset"
+    delay(200);
+    ESP.restart();
+    break;
+  }
+
+  case pnow::CMD_TARE:
+  {
+    // ACK quickly, then do tare and optionally send result
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
+    Serial.println("[PNOW] TARE");
+
+    // TODO: call your tare routine here
+    // e.g. _scale.tare();
+
+    break;
+  }
+
+  case pnow::CMD_TELEMETRY:
+  {
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
+    Serial.println("[PNOW] TELEMETRY requested");
+
+    // TODO: read sensors (weight + RFID) and send a RSP_TELEMETRY packet
+    // (If payload might be big, keep it <= PN_MAX_PAYLOAD and/or chunk.)
+
+    break;
+  }
+
+  default:
+    sendAck(h.seq, false, pnow::ERR_NOT_SUPPORTED, 0);
+    break;
+  }
 }
