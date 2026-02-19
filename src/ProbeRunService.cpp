@@ -475,11 +475,7 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
   {
   case pnow::CMD_STATUS:
   {
-    // ACK now; optionally follow with a STATUS packet later
     sendAck(h.seq, true, pnow::ERR_OK, 0);
-
-    // TODO: send a proper STATUS packet if you want richer info.
-    // Minimal example could be implemented as RSP_STATUS later.
     Serial.printf("[PNOW] STATUS seq=%lu\n", (unsigned long)h.seq);
     break;
   }
@@ -495,7 +491,6 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
 
   case pnow::CMD_RESET:
   {
-    // Two-step reset with nonce to prevent accidental wipe
     if (h.len < sizeof(pnow::ResetPayload))
     {
       sendAck(h.seq, false, pnow::ERR_BAD_LEN, 0);
@@ -529,7 +524,6 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
 
   case pnow::CMD_TARE:
   {
-    // ACK quickly, then do tare and optionally send result
     sendAck(h.seq, true, pnow::ERR_OK, 0);
     Serial.println("[PNOW] TARE");
 
