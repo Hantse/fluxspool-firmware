@@ -554,6 +554,16 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
     break;
   }
 
+  case pnow::CMD_OTA:
+  {
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
+    Serial.println("[PNOW] OTA");
+
+    // TODO: implement OTA routine here
+
+    break;
+  }
+
   default:
     sendAck(h.seq, false, pnow::ERR_NOT_SUPPORTED, 0);
     break;

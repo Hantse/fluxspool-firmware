@@ -19,7 +19,8 @@ namespace pnow
         CMD_STATUS = 4,
         CMD_TELEMETRY = 5,
         CMD_WRITE = 6, // reserved for future use (write NVS key/val)
-
+        CMD_OTA = 7,   // reserved for future use (start OTA with given URL)
+        
         // Responses (Probe -> GW)
         RSP_ACK = 100,
         RSP_STATUS = 101,
