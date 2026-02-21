@@ -70,8 +70,8 @@ void loop()
 }
 #else
 
-MqttService mqttSvc("mqtt.fluxspool.app", 8883);
 RunService::Config runCfg;
+MqttService mqttSvc(runCfg.mqttBase, 8883);
 RunService runSvc(prefSvc, mqttSvc, runCfg);
 
 static bool g_runtimeStarted = false;

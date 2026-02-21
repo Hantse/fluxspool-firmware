@@ -17,6 +17,7 @@ public:
   struct Config
   {
     const char *apiBase = "https://api.fluxspool.app";
+    const char *mqttBase = "mqtt.fluxspool.app";
 
     // register retry while waiting confirm
     uint32_t registerRetryMs = 2000;

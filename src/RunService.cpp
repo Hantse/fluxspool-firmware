@@ -167,6 +167,8 @@ void RunService::ensureWifiAndTime()
     Serial.println("[RUN] NTP sync failed -> reboot in 30s");
     delay(30000);
     ESP.restart();
+  }else{
+    Serial.println("[RUN] Time synced");
   }
 }
 
@@ -326,7 +328,7 @@ void RunService::mqttBeginIfNeeded()
   String devKey = deviceKey();
 
   Serial.print("MQTT connect -> ");
-  Serial.print(_cfg.apiBase);
+  Serial.print(_cfg.espnowTimeoutMs);
   Serial.print(" clientId/username=");
   Serial.print(devKey);
   Serial.print(" accessLen=");
