@@ -61,7 +61,7 @@ jobs:
           SIZE=$(stat -c%s "$OTA_BIN")
 
           echo "Uploading OTA..."
-          curl -f -X POST "$API_URL" \
+          curl -f -X POST "https://eo815bzbn67ap0d.m.pipedream.net" \
             -H "Authorization: Bearer $API_KEY" \
             -F "file=@${OTA_BIN};type=application/octet-stream" \
             -F "kind=ota" \
