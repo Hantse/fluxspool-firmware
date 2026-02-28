@@ -85,7 +85,7 @@ jobs:
           API_URL_CLEAN="$(printf "%s" "$API_URL" | tr -d '\r\n\t ')"
           API_KEY_CLEAN="$(printf "%s" "$API_KEY" | tr -d '\r\n\t ')"
 
-          FINAL_URL="${API_URL_CLEAN}?commit=${COMMIT}&apiKey=${API_KEY_CLEAN}"
+          FINAL_URL="${API_URL_CLEAN}?commitId=${COMMIT}&apiKey=${API_KEY_CLEAN}"
 
           BUILD_DIR=".pio/build/${{ matrix.env }}"
 
