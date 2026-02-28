@@ -2,29 +2,24 @@ name: Firmware Build & Upload
 
 on:
   push:
-    branches:
-      - main
+    branches: [ master ]
   workflow_dispatch:
-    inputs:
-      base_version:
-        description: "Base version (ex: 1.4)"
-        required: true
-        default: "1.4"
-      environment:
-        description: "Target environment"
-        required: true
-        type: choice
-        options:
-          - dev
-          - prod          
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-upload:
     runs-on: ubuntu-latest
 
+    # si tu utilises des Environment secrets GitHub (dev/prod), mets ici: dev ou prod
+    # environment: dev
+
     strategy:
+      fail-fast: false
       matrix:
-        env: [gateway, probe]   # correspond à tes env PlatformIO
+        env: [ gateway, probe ] # doit matcher tes env PlatformIO
 
     steps:
       - name: Checkout
@@ -38,73 +33,68 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      # 🔥 Auto version generation
       - name: Generate Auto Version
         id: version
         run: |
-          BASE="1.4"  # 🔥 tu modifies juste ici quand tu changes MAJOR/MINOR
+          # Change juste MAJOR.MINOR ici quand tu bump
+          BASE="1.4"
           DATE=$(date -u +"%Y%m%d%H%M")
           SHA=$(git rev-parse --short HEAD)
           VERSION="$BASE.$DATE+$SHA"
-          echo "Generated version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
 
-      # 🔥 Build with injected version
       - name: Build Firmware
         run: |
-          export FW_VERSION=${{ steps.version.outputs.version }}
-          pio run -e ${{ matrix.env }}
+          export FW_VERSION="${{ steps.version.outputs.version }}"
+          pio run -e "${{ matrix.env }}"
 
-      # 🔥 Upload OTA firmware.bin
-      - name: Upload OTA Firmware
+      - name: Upload Firmware (OTA + FULL)
         env:
           API_URL: ${{ secrets.FW_UPLOAD_URL }}
           API_KEY: ${{ secrets.FW_UPLOAD_KEY }}
         run: |
-          BUILD_DIR=".pio/build/${{ matrix.env }}"
-          OTA_BIN="$BUILD_DIR/firmware.bin"
+          set -euo pipefail
 
-          if [ ! -f "$OTA_BIN" ]; then
-            echo "firmware.bin not found"
+          # Clean secrets (CRLF, spaces, tabs, newlines)
+          API_URL_CLEAN="$(printf "%s" "$API_URL" | tr -d '\r\n\t ')"
+          API_KEY_CLEAN="$(printf "%s" "$API_KEY" | tr -d '\r\n\t ')"
+
+          if ! echo "$API_URL_CLEAN" | grep -Eq '^https?://'; then
+            echo "❌ FW_UPLOAD_URL must start with http:// or https://"
+            echo "Got URL length=${#API_URL_CLEAN}"
             exit 1
           fi
 
-          SHA=$(sha256sum "$OTA_BIN" | awk '{print $1}')
-          SIZE=$(stat -c%s "$OTA_BIN")
-
-          echo "Uploading OTA..."
-          curl -f -X POST "https://eo815bzbn67ap0d.m.pipedream.net" \
-            -H "Authorization: Bearer $API_KEY" \
-            -F "file=@${OTA_BIN};type=application/octet-stream" \
-            -F "kind=ota" \
-            -F "version=${{ steps.version.outputs.version }}" \
-            -F "board=${{ matrix.env }}" \
-            -F "sha256=$SHA" \
-            -F "size=$SIZE"
-
-      # 🔥 Upload FULL firmware if exists
-      - name: Upload FULL Firmware
-        env:
-          API_URL: ${{ secrets.FW_UPLOAD_URL }}
-          API_KEY: ${{ secrets.FW_UPLOAD_KEY }}
-        run: |
           BUILD_DIR=".pio/build/${{ matrix.env }}"
-          FULL_BIN="$BUILD_DIR/full_firmware.bin"
 
-          if [ ! -f "$FULL_BIN" ]; then
-            echo "No full firmware for ${{ matrix.env }}"
-            exit 0
-          fi
+          upload_one () {
+            local BIN="$1"
+            local KIND="$2"
 
-          SHA=$(sha256sum "$FULL_BIN" | awk '{print $1}')
-          SIZE=$(stat -c%s "$FULL_BIN")
+            if [ ! -f "$BIN" ]; then
+              echo "Skip: $BIN not found"
+              return 0
+            fi
 
-          echo "Uploading FULL..."
-          curl -f -X POST "$API_URL" \
-            -H "Authorization: Bearer $API_KEY" \
-            -F "file=@${FULL_BIN};type=application/octet-stream" \
-            -F "kind=full" \
-            -F "version=${{ steps.version.outputs.version }}" \
-            -F "board=${{ matrix.env }}" \
-            -F "sha256=$SHA" \
-            -F "size=$SIZE"
+            local SHA
+            local SIZE
+            SHA=$(sha256sum "$BIN" | awk '{print $1}')
+            SIZE=$(stat -c%s "$BIN")
+
+            echo "Uploading $KIND -> $BIN (size=$SIZE sha=$SHA)"
+            curl -f -X POST "$API_URL_CLEAN" \
+              -H "Authorization: Bearer $API_KEY_CLEAN" \
+              -F "file=@${BIN};type=application/octet-stream" \
+              -F "kind=$KIND" \
+              -F "version=${{ steps.version.outputs.version }}" \
+              -F "board=${{ matrix.env }}" \
+              -F "sha256=$SHA" \
+              -F "size=$SIZE"
+          }
+
+          # OTA: toujours firmware.bin
+          upload_one "$BUILD_DIR/firmware.bin" "ota"
+
+          # FULL: seulement si ton merge.py l'a généré
+          upload_one "$BUILD_DIR/full_firmware.bin" "full"
