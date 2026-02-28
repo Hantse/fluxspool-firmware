@@ -54,7 +54,7 @@ static bool parseAndStoreTokens(PreferenceService &prefs, const String &respJson
 }
 
 RunService::RunService(PreferenceService &prefs, MqttService &mqtt, const Config &cfg)
-    : _prefs(prefs), _mqtt(mqtt), _cfg(cfg)
+    : _prefs(prefs), _mqtt(mqtt), _cfg(cfg), _esp(), _ota(_prefs)
 {
   _self = this;
 }
@@ -167,7 +167,9 @@ void RunService::ensureWifiAndTime()
     Serial.println("[RUN] NTP sync failed -> reboot in 30s");
     delay(30000);
     ESP.restart();
-  }else{
+  }
+  else
+  {
     Serial.println("[RUN] Time synced");
   }
 }
@@ -581,6 +583,53 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
 
   const String cmd = doc["command"].is<const char *>() ? String(doc["command"].as<const char *>()) : String("");
   const String correlationId = doc["correlationId"].is<const char *>() ? String(doc["correlationId"].as<const char *>()) : String("");
+
+  // ---- OTA command (Gateway) ----
+  if (cmd == "Ota" || cmd == "OTA")
+  {
+    const String url =
+        doc["url"].is<const char *>() ? String(doc["url"].as<const char *>())
+                                      : (doc["Url"].is<const char *>() ? String(doc["Url"].as<const char *>()) : String(""));
+
+    // ACK immediately on command/ack
+    {
+      StaticJsonDocument<384> ack;
+      ack["correlationId"] = correlationId;
+      ack["ok"] = (url.length() > 0);
+      ack["status"] = "running";
+      if (url.length() == 0)
+        ack["error"] = "missing_url";
+
+      String out;
+      serializeJson(ack, out);
+
+      const String tAck = topicOf("command/ack");
+      _mqtt.publish(tAck.c_str(), out.c_str());
+    }
+
+    if (url.length() == 0)
+      return;
+
+    // Run OTA (blocking) -> will reboot on success
+    auto r = _ota.runGateway(url, nullptr);
+
+    // If OTA failed (no reboot), publish a result
+    {
+      StaticJsonDocument<384> res;
+      res["correlationId"] = correlationId;
+      res["ok"] = (r == OtaService::Result::Ok);
+      res["status"] = "failed";
+      res["errorCode"] = (int)r;
+
+      String out;
+      serializeJson(res, out);
+
+      const String tRes = topicOf("command/result");
+      _mqtt.publish(tRes.c_str(), out.c_str());
+    }
+
+    return;
+  }
 
   if (cmd != "TelemetryDevice")
   {

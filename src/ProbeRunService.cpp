@@ -25,7 +25,7 @@ static String macNoSep()
 }
 
 ProbeRunService::ProbeRunService(PreferenceService &prefs, const Config &cfg)
-    : _prefs(prefs), _cfg(cfg)
+    : _prefs(prefs), _cfg(cfg), _ota(_prefs)
 {
   _self = this;
 }
@@ -556,10 +556,24 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
 
   case pnow::CMD_OTA:
   {
-    sendAck(h.seq, true, pnow::ERR_OK, 0);
     Serial.println("[PNOW] OTA");
+    // ACK immediately: "command in progress"
+    sendAck(h.seq, true, pnow::ERR_OK, 0);
 
-    // TODO: implement OTA routine here
+    // payload = URL as bytes (not necessarily null-terminated)
+    if (h.len == 0 || h.len > pnow::PN_MAX_PAYLOAD)
+    {
+      Serial.println("[PNOW] OTA missing url payload");
+      break;
+    }
+
+    String url;
+    url.reserve(h.len + 1);
+    for (uint16_t i = 0; i < h.len; i++)
+      url += (char)payload[i];
+
+    Serial.println("[PNOW] OTA start");
+    handleOtaCommand(url);
 
     break;
   }
@@ -568,4 +582,32 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
     sendAck(h.seq, false, pnow::ERR_NOT_SUPPORTED, 0);
     break;
   }
+}
+
+void ProbeRunService::handleOtaCommand(const String &url)
+{
+  Serial.print("[PNOW][OTA] url=");
+  Serial.println(url);
+
+  // Stop ESPNOW link before WiFi connect/HTTP
+  _link.end();
+  delay(50);
+
+  auto r = _ota.runProbe(url, nullptr);
+
+  if (r == OtaService::Result::Ok)
+  {
+    // reboot already triggered
+    return;
+  }
+
+  Serial.print("[PNOW][OTA] failed code=");
+  Serial.println((int)r);
+
+  // Ensure WiFi is off and resume ESPNOW
+  WiFi.disconnect(true, true);
+  delay(100);
+
+  // Re-init link
+  begin();
 }

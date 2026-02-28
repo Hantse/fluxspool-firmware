@@ -4,6 +4,7 @@
 
 #include "PreferenceService.h"
 #include "ProbeNowLink.h"
+#include "OtaService.h"
 
 // ProbeRunService
 // - Connects to WiFi
@@ -51,10 +52,12 @@ private:
   static void onRxStatic(const uint8_t *mac, const uint8_t *data, int len);
   void onRx(const uint8_t *mac, const uint8_t *data, int len);
   void sendAck(uint32_t seq, bool ok, uint8_t err, uint32_t arg);
-
+  void handleOtaCommand(const String &url); 
+  
 private:
   PreferenceService &_prefs;
   Config _cfg;
+  OtaService _ota;
 
   bool _running = false;
   bool _espOnly = false;

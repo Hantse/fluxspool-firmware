@@ -5,6 +5,7 @@
 #include "PreferenceService.h"
 #include "MqttService.h"
 #include "EspNowService.h"
+#include "OtaService.h"
 
 // RunService (V14)
 // - Keeps the V13 behavior intact (WiFi+NTP, token refresh, MQTT register/confirm, status/telemetry cadence)
@@ -17,7 +18,8 @@ public:
   struct Config
   {
     const char *apiBase = "https://api.fluxspool.app";
-    const char *mqttBase = "mqtt.fluxspool.app";
+    // const char *mqttBase = "mqtt.fluxspool.app";
+    const char *mqttBase = "7.tcp.eu.ngrok.io:13885";
 
     // register retry while waiting confirm
     uint32_t registerRetryMs = 2000;
@@ -82,6 +84,7 @@ private:
   Config _cfg;
 
   EspNowService _esp;
+  OtaService _ota;
 
   bool _running = false;
   bool _mqttStarted = false;
