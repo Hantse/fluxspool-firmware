@@ -6,6 +6,11 @@
 #include <time.h>
 #include <inttypes.h>
 #include <ArduinoJson.h>
+#ifndef FW_VERSION
+#define FW_VERSION "0.0.0"
+#endif
+
+const char* firmwareVersion = FW_VERSION;
 
 RunService *RunService::_self = nullptr;
 
@@ -361,7 +366,7 @@ void RunService::publishRegister()
 
   DynamicJsonDocument doc(512);
   doc["chipId"] = String((uint32_t)(ESP.getEfuseMac() >> 32), HEX) + String((uint32_t)ESP.getEfuseMac(), HEX);
-  doc["firmwareVersion"] = _cfg.apiBase ? "0.15.0" : "0.15.0"; // keep your existing value if you patch later
+  doc["firmwareVersion"] = firmwareVersion; // keep your existing value if you patch later
   doc["macAddress"] = WiFi.macAddress();
   doc["wifiSsid"] = WiFi.SSID();
 

@@ -6,6 +6,9 @@
 #include <HTTPClient.h>
 #include <time.h>
 #include <ArduinoJson.h>
+#ifndef FW_VERSION
+#define FW_VERSION "0.0.0"
+#endif
 
 ProbeRunService *ProbeRunService::_self = nullptr;
 
@@ -368,7 +371,7 @@ String ProbeRunService::model() const
 
 String ProbeRunService::firmwareVersion() const
 {
-  return "0.0.1";
+  return FW_VERSION;
 }
 
 void ProbeRunService::onRxStatic(const uint8_t *mac, const uint8_t *data, int len)
