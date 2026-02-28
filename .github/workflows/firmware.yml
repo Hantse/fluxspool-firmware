@@ -25,14 +25,11 @@ jobs:
   build-upload:
     runs-on: ubuntu-latest
     environment: dev
-    
-    # si tu utilises des Environment secrets GitHub (dev/prod), mets ici: dev ou prod
-    # environment: dev
 
     strategy:
       fail-fast: false
       matrix:
-        env: [ gateway, probe ] # doit matcher tes env PlatformIO
+        env: [ gateway, probe ]
 
     steps:
       - name: Checkout
@@ -49,12 +46,17 @@ jobs:
       - name: Generate Auto Version
         id: version
         run: |
-          # Change juste MAJOR.MINOR ici quand tu bump
           BASE="1.4"
           DATE=$(date -u +"%Y%m%d%H%M")
-          SHA=$(git rev-parse --short HEAD)
-          VERSION="$BASE.$DATE+$SHA"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          FULL_SHA=$(git rev-parse HEAD)
+
+          VERSION="$BASE.$DATE+$SHORT_SHA"
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "full_sha=$FULL_SHA" >> $GITHUB_OUTPUT
+
           echo "Generated version: $VERSION"
 
       - name: Build Firmware
@@ -69,7 +71,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Clean secrets (CRLF, spaces, tabs, newlines)
           API_URL_CLEAN="$(printf "%s" "$API_URL" | tr -d '\r\n\t ')"
           API_KEY_CLEAN="$(printf "%s" "$API_KEY" | tr -d '\r\n\t ')"
 
@@ -78,6 +79,9 @@ jobs:
             echo "Got URL length=${#API_URL_CLEAN}"
             exit 1
           fi
+
+          COMMIT="${{ steps.version.outputs.full_sha }}"
+          FINAL_URL="${API_URL_CLEAN}?commit=${COMMIT}"
 
           BUILD_DIR=".pio/build/${{ matrix.env }}"
 
@@ -95,8 +99,8 @@ jobs:
             SHA=$(sha256sum "$BIN" | awk '{print $1}')
             SIZE=$(stat -c%s "$BIN")
 
-            echo "Uploading $KIND -> $BIN (size=$SIZE sha=$SHA)"
-            curl -f -X POST "$API_URL_CLEAN" \
+            echo "Uploading $KIND (commit=$COMMIT)"
+            curl -f -X POST "$FINAL_URL" \
               -H "Authorization: Bearer $API_KEY_CLEAN" \
               -F "file=@${BIN};type=application/octet-stream" \
               -F "kind=$KIND" \
@@ -106,8 +110,5 @@ jobs:
               -F "size=$SIZE"
           }
 
-          # OTA: toujours firmware.bin
           upload_one "$BUILD_DIR/firmware.bin" "ota"
-
-          # FULL: seulement si ton merge.py l'a généré
           upload_one "$BUILD_DIR/full_firmware.bin" "full"
