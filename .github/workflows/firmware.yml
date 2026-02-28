@@ -24,7 +24,8 @@ concurrency:
 jobs:
   build-upload:
     runs-on: ubuntu-latest
-
+    environment: dev
+    
     # si tu utilises des Environment secrets GitHub (dev/prod), mets ici: dev ou prod
     # environment: dev
 
