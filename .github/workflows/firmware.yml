@@ -5,6 +5,18 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      base_version:
+        description: "Base version (ex: 1.4)"
+        required: true
+        default: "1.4"
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod          
 
 jobs:
   build-upload:
