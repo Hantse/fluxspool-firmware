@@ -33,8 +33,6 @@ private:
   bool ensureTimeSynced(uint32_t timeoutMs = 8000);
   bool authProvision();
 
-  static String readPayloadToString(const uint8_t *payload, size_t len);
-
 private:
   PreferenceService &_prefs;
   WebServer &_server;

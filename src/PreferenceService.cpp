@@ -431,6 +431,16 @@ bool PreferenceService::clearProbeNowConfig()
   return ok;
 }
 
+uint32_t PreferenceService::getPnowLastSeq() const
+{
+  return getUInt(K_PNOW_SEQ, 0);
+}
+
+bool PreferenceService::setPnowLastSeq(uint32_t seq)
+{
+  return setUInt(K_PNOW_SEQ, seq);
+}
+
 // ---------------- Debug ----------------
 
 String PreferenceService::maskSecret(const String &s, int keep)

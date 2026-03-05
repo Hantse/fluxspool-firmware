@@ -144,6 +144,10 @@ public:
   bool saveProbeNowConfig(const ProbeNowConfig &cfg);
   bool clearProbeNowConfig();
 
+  // Anti-replay: last accepted ESP-NOW sequence number
+  uint32_t getPnowLastSeq() const;
+  bool setPnowLastSeq(uint32_t seq);
+
 private:
   // Keys (keep short)
   static constexpr const char *K_SETUP_DONE = "setup_done";
@@ -173,6 +177,7 @@ private:
   static constexpr const char *K_PNOW_GWMAC = "pnow_gwmac";
   static constexpr const char *K_PNOW_LMK = "pnow_lmk";
   static constexpr const char *K_PNOW_GWHMAC = "pnow_gwhmac";
+  static constexpr const char *K_PNOW_SEQ = "pnow_seq";
 
 private:
   const char *_ns;

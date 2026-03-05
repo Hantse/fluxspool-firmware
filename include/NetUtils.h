@@ -4,6 +4,9 @@
 #include <time.h>
 #include "PreferenceService.h"
 
+// Forward declare to avoid pulling in ArduinoJson in every consumer.
+// The implementation is in NetUtils.cpp which includes ArduinoJson.
+
 namespace netutils
 {
 
@@ -23,5 +26,10 @@ bool wifiConnectSTA(PreferenceService &prefs, uint32_t timeoutMs = 15000);
 
 // Sync time via NTP. Skips the configTime call if already synced.
 bool ensureTimeSynced(uint32_t timeoutMs = 8000);
+
+// Parse a token API response and persist the tokens.
+// isProvisioning = true  → also stores deviceId, uses write-verify (setup path).
+// isProvisioning = false → skips deviceId, standard write (refresh path).
+bool storeTokenResponse(PreferenceService &prefs, const String &respJson, bool isProvisioning = false);
 
 } // namespace netutils

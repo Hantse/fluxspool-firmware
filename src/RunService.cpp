@@ -15,43 +15,6 @@ const char* firmwareVersion = FW_VERSION;
 
 RunService *RunService::_self = nullptr;
 
-static bool parseAndStoreTokens(PreferenceService &prefs, const String &respJson)
-{
-  JsonDocument doc;
-  auto err = deserializeJson(doc, respJson);
-  if (err)
-  {
-    Serial.print("[RUN] JSON parse error: ");
-    Serial.println(err.c_str());
-    return false;
-  }
-
-  JsonVariant root = doc;
-  if (doc["data"].is<JsonObject>())
-    root = doc["data"];
-
-  const char *access = root["accessToken"];
-  const char *refresh = root["refreshToken"];
-
-  long expiresIn = 0;
-  if (root["expiresIn"].is<long>())
-    expiresIn = root["expiresIn"].as<long>();
-  else if (root["expiresIn"].is<int>())
-    expiresIn = (long)root["expiresIn"].as<int>();
-  else if (root["expiresIn"].is<const char *>())
-    expiresIn = atol(root["expiresIn"].as<const char *>());
-
-  if (!access || !refresh || expiresIn <= 0)
-  {
-    Serial.println("[RUN] Token payload invalid");
-    return false;
-  }
-
-  const uint64_t exp = netutils::nowUnix() + (uint64_t)expiresIn;
-
-  return prefs.updateAuthTokens(String(access), String(refresh), exp);
-}
-
 RunService::RunService(PreferenceService &prefs, MqttService &mqtt, const Config &cfg)
     : _prefs(prefs), _mqtt(mqtt), _cfg(cfg), _esp(), _ota(_prefs)
 {
@@ -208,10 +171,12 @@ bool RunService::httpPostJson(const String &url, const String &body, String &out
   WiFiClientSecure client;
 
   String ca = _prefs.loadCaCertPem();
-  if (ca.length() > 0)
-    client.setCACert(ca.c_str());
-  else
-    client.setInsecure();
+  if (ca.length() == 0)
+  {
+    Serial.println("[RUN] No CA cert in NVS -> aborting HTTPS request");
+    return false;
+  }
+  client.setCACert(ca.c_str());
 
   http.begin(client, url);
   http.addHeader("Content-Type", "application/json");
@@ -263,10 +228,10 @@ bool RunService::authRefresh()
     return false;
   }
 
-  bool ok = parseAndStoreTokens(_prefs, resp);
+  bool ok = netutils::storeTokenResponse(_prefs, resp);
   if (!ok)
   {
-    Serial.println("[RUN] parseAndStoreTokens failed. Response was:");
+    Serial.println("[RUN] storeTokenResponse failed. Response was:");
     Serial.println(resp);
   }
   else
@@ -514,9 +479,16 @@ void RunService::onTopologyResult(char *topic, byte *payload, unsigned int lengt
   uint32_t added = 0;
   for (JsonVariant v : probes)
   {
-    String macStr = v["MacAddress"].is<const char *>() ? String(v["MacAddress"].as<const char *>()) : String(v["macAddress"].as<const char *>());
-    String lmkHex = v["Lmk"].is<const char *>() ? String(v["Lmk"].as<const char *>()) : String(v["lmk"].as<const char *>());
-    String dkey = v["DeviceKey"].is<const char *>() ? String(v["DeviceKey"].as<const char *>()) : String(v["deviceKey"].as<const char *>());
+    const char *macRaw = v["MacAddress"].is<const char *>() ? v["MacAddress"].as<const char *>() : v["macAddress"].as<const char *>();
+    const char *lmkRaw = v["Lmk"].is<const char *>() ? v["Lmk"].as<const char *>() : v["lmk"].as<const char *>();
+    const char *dkeyRaw = v["DeviceKey"].is<const char *>() ? v["DeviceKey"].as<const char *>() : v["deviceKey"].as<const char *>();
+
+    if (!macRaw)
+      continue;
+
+    String macStr(macRaw);
+    String lmkHex = lmkRaw ? String(lmkRaw) : String("");
+    String dkey = dkeyRaw ? String(dkeyRaw) : String("");
 
     uint8_t mac[6];
     if (!EspNowService::parseMac(macStr, mac))
@@ -710,9 +682,16 @@ void RunService::loadTopologyFromNvs()
   uint32_t added = 0;
   for (JsonVariant v : probes)
   {
-    String macStr = v["MacAddress"].is<const char *>() ? String(v["MacAddress"].as<const char *>()) : String(v["macAddress"].as<const char *>());
-    String lmkHex = v["Lmk"].is<const char *>() ? String(v["Lmk"].as<const char *>()) : String(v["lmk"].as<const char *>());
-    String dkey = v["DeviceKey"].is<const char *>() ? String(v["DeviceKey"].as<const char *>()) : String(v["deviceKey"].as<const char *>());
+    const char *macRaw = v["MacAddress"].is<const char *>() ? v["MacAddress"].as<const char *>() : v["macAddress"].as<const char *>();
+    const char *lmkRaw = v["Lmk"].is<const char *>() ? v["Lmk"].as<const char *>() : v["lmk"].as<const char *>();
+    const char *dkeyRaw = v["DeviceKey"].is<const char *>() ? v["DeviceKey"].as<const char *>() : v["deviceKey"].as<const char *>();
+
+    if (!macRaw)
+      continue;
+
+    String macStr(macRaw);
+    String lmkHex = lmkRaw ? String(lmkRaw) : String("");
+    String dkey = dkeyRaw ? String(dkeyRaw) : String("");
 
     uint8_t mac[6];
     if (!EspNowService::parseMac(macStr, mac))

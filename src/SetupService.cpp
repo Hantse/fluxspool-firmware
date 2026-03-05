@@ -179,48 +179,6 @@ bool SetupService::ensureTimeSynced(uint32_t timeoutMs)
   return netutils::ensureTimeSynced(timeoutMs);
 }
 
-static bool parseAndStoreTokens(PreferenceService &prefs, const String &respJson)
-{
-  JsonDocument doc;
-  auto err = deserializeJson(doc, respJson);
-  if (err)
-  {
-    Serial.print("[SETUP] JSON parse error: ");
-    Serial.println(err.c_str());
-    Serial.println(respJson);
-    return false;
-  }
-
-  JsonVariant root = doc;
-  if (doc["data"].is<JsonObject>())
-    root = doc["data"];
-
-  const char *devId = root["deviceId"];
-  const char *access = root["accessToken"];
-  const char *refresh = root["refreshToken"];
-
-  long expiresIn =
-      root["expiresIn"].is<long>() ? root["expiresIn"].as<long>() : root["expiresIn"].is<int>()        ? (long)root["expiresIn"].as<int>()
-                                                                : root["expiresIn"].is<const char *>() ? atol(root["expiresIn"].as<const char *>())
-                                                                                                       : 0;
-
-  if (!access || !refresh || expiresIn <= 0)
-  {
-    Serial.println("[SETUP] Token payload invalid");
-    Serial.println(respJson);
-    return false;
-  }
-
-  const String accessS(access);
-  const String refreshS(refresh);
-  const uint64_t exp = netutils::nowUnix() + (uint64_t)expiresIn;
-
-  if (devId && *devId)
-    prefs.setDeviceKey(String(devId));
-
-  return prefs.updateAuthTokensChecked(accessS, refreshS, exp);
-}
-
 bool SetupService::authProvision()
 {
   auto codes = _prefs.loadProvisioningCodes();
@@ -247,14 +205,6 @@ bool SetupService::authProvision()
     return false;
   }
 
-  return parseAndStoreTokens(_prefs, resp);
+  return netutils::storeTokenResponse(_prefs, resp, true);
 }
 
-String SetupService::readPayloadToString(const uint8_t *payload, size_t len)
-{
-  String body;
-  body.reserve(len + 1);
-  for (size_t i = 0; i < len; i++)
-    body += (char)payload[i];
-  return body;
-}

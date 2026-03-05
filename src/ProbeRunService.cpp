@@ -33,7 +33,8 @@ void ProbeRunService::begin()
   _espOnly = false;
   _lastTokenCheckMs = 0;
   _nextRegisterMs = 0;
-  Serial.println("[PROBE] begin");
+  _lastSeqSeen = _prefs.getPnowLastSeq();
+  Serial.printf("[PROBE] begin (lastSeq=%lu)\n", (unsigned long)_lastSeqSeen);
 
   ensureWifiAndTime();
 }
@@ -95,9 +96,7 @@ void ProbeRunService::loop()
   {
     Serial.println("[PROBE] switched to ESPNOW-only");
     _espOnly = true;
-    // hard cut WiFi
-    WiFi.disconnect(true, true);
-    WiFi.mode(WIFI_STA);
+    // WiFi already disconnected inside ensureEspNow()
   }
 
   delay(20);
@@ -179,27 +178,7 @@ bool ProbeRunService::authRefresh()
     return false;
   }
 
-  // parse same shape as setup provisioning response
-  JsonDocument doc;
-  if (deserializeJson(doc, resp))
-    return false;
-  JsonVariant root = doc;
-  if (doc["data"].is<JsonObject>())
-    root = doc["data"];
-
-  const char *access = root["accessToken"];
-  const char *refresh2 = root["refreshToken"];
-  long expiresIn =
-      root["expiresIn"].is<long>() ? root["expiresIn"].as<long>() : root["expiresIn"].is<int>()        ? (long)root["expiresIn"].as<int>()
-                                                                : root["expiresIn"].is<const char *>() ? atol(root["expiresIn"].as<const char *>())
-                                                                                                       : 0;
-
-  if (!access || !refresh2 || expiresIn <= 0)
-    return false;
-
-  const uint64_t exp = netutils::nowUnix() + (uint64_t)expiresIn;
-
-  return _prefs.updateAuthTokens(String(access), String(refresh2), exp);
+  return netutils::storeTokenResponse(_prefs, resp);
 }
 
 bool ProbeRunService::registerProbe()
@@ -287,7 +266,7 @@ bool ProbeRunService::httpPostJson(const String &url, const String &body, String
   outCode = http.POST(body);
   outResp = (outCode > 0) ? http.getString() : "";
   http.end();
-  return outCode != 0;
+  return outCode > 0;
 }
 
 bool ProbeRunService::ensureEspNow()
@@ -427,6 +406,7 @@ void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
   }
   _lastCmdAtMs = nowMs;
   _lastSeqSeen = h.seq;
+  _prefs.setPnowLastSeq(h.seq);
 
   // ---- 4) Dispatch ----
   switch ((pnow::MsgType)h.type)
