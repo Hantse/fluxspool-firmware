@@ -1,5 +1,6 @@
 #include "ProbeRunService.h"
 #include "PnowProtocol.h"
+#include "NetUtils.h"
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -11,13 +12,6 @@
 #endif
 
 ProbeRunService *ProbeRunService::_self = nullptr;
-
-static uint64_t nowUnix()
-{
-  time_t now = 0;
-  time(&now);
-  return (uint64_t)now;
-}
 
 static String macNoSep()
 {
@@ -53,10 +47,9 @@ void ProbeRunService::loop()
   if (_espOnly)
   {
     // TODO: heartbeat / telemetry
-    static uint32_t last = 0;
-    if (millis() - last > 5000)
+    if (millis() - _lastHeartbeatMs > 5000)
     {
-      last = millis();
+      _lastHeartbeatMs = millis();
       const char *msg = "probe:heartbeat";
       _link.send((const uint8_t *)msg, strlen(msg));
     }
@@ -122,38 +115,12 @@ void ProbeRunService::ensureWifiAndTime()
 
 bool ProbeRunService::wifiConnectSTA(uint32_t timeoutMs)
 {
-  auto wifi = _prefs.loadWifi();
-  if (wifi.ssid.length() == 0)
-    return false;
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(wifi.ssid.c_str(), wifi.password.c_str());
-
-  uint32_t start = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - start) < timeoutMs)
-  {
-    delay(200);
-  }
-  return WiFi.status() == WL_CONNECTED;
+  return netutils::wifiConnectSTA(_prefs, timeoutMs);
 }
 
 bool ProbeRunService::ensureTimeSynced(uint32_t timeoutMs)
 {
-  time_t now;
-  time(&now);
-  if (now > 1700000000)
-    return true;
-
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  uint32_t start = millis();
-  while ((millis() - start) < timeoutMs)
-  {
-    time(&now);
-    if (now > 1700000000)
-      return true;
-    delay(250);
-  }
-  return false;
+  return netutils::ensureTimeSynced(timeoutMs);
 }
 
 bool ProbeRunService::tokenValidSoon() const
@@ -161,9 +128,9 @@ bool ProbeRunService::tokenValidSoon() const
   uint64_t exp = _prefs.getAccessExpUnix();
   if (exp == 0)
     return false;
-  uint64_t now = nowUnix();
-  if (now == 0)
-    return true; // if time unknown, don't block
+  uint64_t now = netutils::nowUnix();
+  if (!netutils::timeIsValid(now))
+    return true; // time not synced yet — trust stored exp, don't refresh blindly
   return (exp > (now + (uint64_t)_cfg.tokenSkewSec));
 }
 
@@ -195,7 +162,11 @@ bool ProbeRunService::authRefresh()
   }
 
   String url = String(_cfg.apiBase) + "/api/device/refreshtoken";
-  String body = String("{\"refreshToken\":\"") + refresh + "\",\"deviceId\":\"" + devKey + "\"}";
+  JsonDocument bodyDoc;
+  bodyDoc["refreshToken"] = refresh;
+  bodyDoc["deviceId"] = devKey;
+  String body;
+  serializeJson(bodyDoc, body);
 
   String resp;
   int code = 0;
@@ -226,18 +197,9 @@ bool ProbeRunService::authRefresh()
   if (!access || !refresh2 || expiresIn <= 0)
     return false;
 
-  const uint64_t exp = nowUnix() + (uint64_t)expiresIn;
+  const uint64_t exp = netutils::nowUnix() + (uint64_t)expiresIn;
 
-  // store in BOTH legacy and auth_* so future code can use either
-  _prefs.setStringChecked("access", String(access));
-  _prefs.setStringChecked("refresh", String(refresh2));
-  _prefs.setU64("access_exp", exp);
-
-  _prefs.setString("auth_at", String(access));
-  _prefs.setString("auth_rt", String(refresh2));
-  _prefs.setU64("auth_at_exp", exp);
-
-  return true;
+  return _prefs.updateAuthTokens(String(access), String(refresh2), exp);
 }
 
 bool ProbeRunService::registerProbe()
@@ -347,6 +309,9 @@ bool ProbeRunService::ensureEspNow()
   }
   peer.hasLmk = true;
 
+  memcpy(_gatewayMac, peer.mac, 6);
+  _gatewayMacCached = true;
+
   // disconnect WiFi but keep STA mode
   WiFi.disconnect(true, true);
   delay(100);
@@ -385,11 +350,6 @@ static bool macEquals6(const uint8_t *a, const uint8_t *b)
   return memcmp(a, b, 6) == 0;
 }
 
-static uint32_t uptimeSeconds()
-{
-  return (uint32_t)(millis() / 1000UL);
-}
-
 void ProbeRunService::sendAck(uint32_t seq, bool ok, uint8_t err, uint32_t arg)
 {
   uint8_t buf[sizeof(pnow::Header) + sizeof(pnow::AckPayload)];
@@ -417,15 +377,10 @@ void ProbeRunService::sendAck(uint32_t seq, bool ok, uint8_t err, uint32_t arg)
 
 void ProbeRunService::onRx(const uint8_t *mac, const uint8_t *data, int len)
 {
-  // ---- 0) Filter: accept only gateway MAC ----
-  auto nowCfg = _prefs.loadProbeNowConfig();
-  uint8_t expected[6];
-  if (!ProbeNowLink::parseMac(nowCfg.gatewayMac, expected))
-  {
-    // invalid stored config -> ignore
+  // ---- 0) Filter: accept only gateway MAC (cached at ESPNOW init) ----
+  if (!_gatewayMacCached)
     return;
-  }
-  if (!macEquals6(mac, expected))
+  if (!macEquals6(mac, _gatewayMac))
   {
     return;
   }
@@ -607,10 +562,6 @@ void ProbeRunService::handleOtaCommand(const String &url)
   Serial.print("[PNOW][OTA] failed code=");
   Serial.println((int)r);
 
-  // Ensure WiFi is off and resume ESPNOW
-  WiFi.disconnect(true, true);
-  delay(100);
-
-  // Re-init link
-  begin();
+  // Re-init ESPNOW link from cached config (ensureEspNow handles WiFi disconnect internally)
+  ensureEspNow();
 }

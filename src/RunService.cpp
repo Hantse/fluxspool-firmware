@@ -1,4 +1,5 @@
 #include "RunService.h"
+#include "NetUtils.h"
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -13,13 +14,6 @@
 const char* firmwareVersion = FW_VERSION;
 
 RunService *RunService::_self = nullptr;
-
-static uint64_t nowUnix()
-{
-  time_t now = 0;
-  time(&now);
-  return (uint64_t)now;
-}
 
 static bool parseAndStoreTokens(PreferenceService &prefs, const String &respJson)
 {
@@ -53,7 +47,7 @@ static bool parseAndStoreTokens(PreferenceService &prefs, const String &respJson
     return false;
   }
 
-  const uint64_t exp = nowUnix() + (uint64_t)expiresIn;
+  const uint64_t exp = netutils::nowUnix() + (uint64_t)expiresIn;
 
   return prefs.updateAuthTokens(String(access), String(refresh), exp);
 }
@@ -181,49 +175,22 @@ void RunService::ensureWifiAndTime()
 
 bool RunService::wifiConnectSTA(uint32_t timeoutMs)
 {
-  auto w = _prefs.loadWifi();
-  if (w.ssid.length() == 0)
-    return false;
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(w.ssid.c_str(), w.password.c_str());
-
-  uint32_t start = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - start) < timeoutMs)
-  {
-    delay(200);
-  }
-
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    Serial.print("[RUN] WiFi OK. IP=");
-    Serial.println(WiFi.localIP());
-    return true;
-  }
-  return false;
+  return netutils::wifiConnectSTA(_prefs, timeoutMs);
 }
 
 bool RunService::ensureTimeSynced(uint32_t timeoutMs)
 {
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  uint32_t start = millis();
-  while ((millis() - start) < timeoutMs)
-  {
-    time_t now;
-    time(&now);
-    if (now > 1700000000)
-      return true;
-    delay(250);
-  }
-  return false;
+  return netutils::ensureTimeSynced(timeoutMs);
 }
 
 bool RunService::tokenValidSoon() const
 {
   uint64_t exp = _prefs.getAccessExpUnix();
-  uint64_t now = nowUnix();
-  if (exp == 0 || now < 1700000000ULL)
+  if (exp == 0)
     return false;
+  uint64_t now = netutils::nowUnix();
+  if (!netutils::timeIsValid(now))
+    return true; // time not synced yet — trust stored exp, don't refresh blindly
   return (now + (uint64_t)_cfg.tokenSkewSec) < exp;
 }
 
@@ -266,7 +233,11 @@ bool RunService::authRefresh()
 
   String url = String(_cfg.apiBase) + "/api/device/refreshtoken";
   String devKey = deviceKey();
-  String body = "{\"refreshToken\":\"" + refresh + "\",\"deviceId\":\"" + devKey + "\"}";
+  JsonDocument bodyDoc;
+  bodyDoc["refreshToken"] = refresh;
+  bodyDoc["deviceId"] = devKey;
+  String body;
+  serializeJson(bodyDoc, body);
 
   Serial.print("[RUN] Refresh token len=");
   Serial.print(refresh.length());
@@ -335,7 +306,7 @@ void RunService::mqttBeginIfNeeded()
   String devKey = deviceKey();
 
   Serial.print("MQTT connect -> ");
-  Serial.print(_cfg.espnowTimeoutMs);
+  Serial.print(_cfg.mqttBase);
   Serial.print(" clientId/username=");
   Serial.print(devKey);
   Serial.print(" accessLen=");
@@ -364,7 +335,7 @@ void RunService::publishRegister()
     return;
   }
 
-  DynamicJsonDocument doc(512);
+  JsonDocument doc;
   doc["chipId"] = String((uint32_t)(ESP.getEfuseMac() >> 32), HEX) + String((uint32_t)ESP.getEfuseMac(), HEX);
   doc["firmwareVersion"] = firmwareVersion; // keep your existing value if you patch later
   doc["macAddress"] = WiFi.macAddress();
@@ -392,7 +363,7 @@ void RunService::publishStatusIfDue()
     return;
   _lastStatusMs = nowMs;
 
-  DynamicJsonDocument doc(256);
+  JsonDocument doc;
   doc["wifi"] = (WiFi.status() == WL_CONNECTED);
   doc["rssi"] = WiFi.RSSI();
   doc["heap"] = ESP.getFreeHeap();
@@ -418,7 +389,7 @@ void RunService::publishTelemetryIfDue()
   _lastTelemetryMs = nowMs;
 
   // Keep current behavior: publish a heartbeat telemetry (real probe data comes via ESPNOW requests)
-  DynamicJsonDocument doc(128);
+  JsonDocument doc;
   doc["alive"] = true;
 
   String payload;
@@ -598,7 +569,7 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
 
     // ACK immediately on command/ack
     {
-      StaticJsonDocument<384> ack;
+      JsonDocument ack;
       ack["correlationId"] = correlationId;
       ack["ok"] = (url.length() > 0);
       ack["status"] = "running";
@@ -620,7 +591,7 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
 
     // If OTA failed (no reboot), publish a result
     {
-      StaticJsonDocument<384> res;
+      JsonDocument res;
       res["correlationId"] = correlationId;
       res["ok"] = (r == OtaService::Result::Ok);
       res["status"] = "failed";
@@ -646,7 +617,7 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
 
   // ACK immediately
   {
-    StaticJsonDocument<256> ack;
+    JsonDocument ack;
     ack["correlationId"] = correlationId;
     ack["ok"] = true;
     String out;
@@ -659,7 +630,7 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
   uint8_t mac[6];
   if (correlationId.length() != 32 || !EspNowService::parseMac(macStr, mac))
   {
-    StaticJsonDocument<256> res;
+    JsonDocument res;
     res["correlationId"] = correlationId;
     res["macAddress"] = macStr;
     res["ok"] = false;
@@ -677,7 +648,7 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
       correlationId,
       [this, correlationId, macStr](const EspNowService::TelemetryResponse &r)
       {
-        StaticJsonDocument<512> res;
+        JsonDocument res;
         res["correlationId"] = correlationId;
         res["macAddress"] = macStr;
         res["ok"] = r.ok;
@@ -706,7 +677,7 @@ void RunService::onCommand(char *topic, byte *payload, unsigned int length)
 
   if (!queued)
   {
-    StaticJsonDocument<256> res;
+    JsonDocument res;
     res["correlationId"] = correlationId;
     res["macAddress"] = macStr;
     res["ok"] = false;

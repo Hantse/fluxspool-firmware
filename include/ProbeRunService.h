@@ -65,8 +65,13 @@ private:
   uint32_t _lastTokenCheckMs = 0;
   uint32_t _nextRegisterMs = 0;
 
+  uint32_t _lastHeartbeatMs = 0;
+
   uint32_t _lastSeqSeen = 0;
   uint32_t _lastCmdAtMs = 0;
+
+  uint8_t _gatewayMac[6]{};
+  bool _gatewayMacCached = false;
 
   // RESET two-step
   bool _resetArmed = false;
