@@ -22,47 +22,72 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-upload:
+  # ── 1. Generate version once ──────────────────────────────────────────────
+  prepare:
     runs-on: ubuntu-latest
-    environment: dev
-
-    strategy:
-      fail-fast: false
-      matrix:
-        env: [ gateway, probe, standalone ]
-
+    outputs:
+      version:   ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      full_sha:  ${{ steps.version.outputs.full_sha }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install PlatformIO
-        run: pip install platformio
-
-      - name: Generate Auto Version
+      - name: Generate Version
         id: version
         run: |
           BASE="1.4"
           DATE=$(date -u +"%Y%m%d%H%M")
           SHORT_SHA=$(git rev-parse --short HEAD)
           FULL_SHA=$(git rev-parse HEAD)
-
           VERSION="$BASE.$DATE+$SHORT_SHA"
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION"   >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "full_sha=$FULL_SHA" >> $GITHUB_OUTPUT
-
+          echo "full_sha=$FULL_SHA"   >> $GITHUB_OUTPUT
           echo "Generated version: $VERSION"
 
-      - name: Build Firmware
+  # ── 2. Build all envs in parallel ─────────────────────────────────────────
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [ gateway, probe, standalone ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build Firmware (${{ matrix.env }})
         run: |
-          export FW_VERSION="${{ steps.version.outputs.version }}"
+          export FW_VERSION="${{ needs.prepare.outputs.version }}"
           pio run -e "${{ matrix.env }}"
+
+      - name: Save build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.env }}
+          path: .pio/build/${{ matrix.env }}/
+          retention-days: 1
+
+  # ── 3. Upload once, after all builds succeed ───────────────────────────────
+  upload:
+    needs: [ prepare, build ]
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Upload Firmware (OTA + FULL)
         env:
@@ -80,39 +105,37 @@ jobs:
             exit 1
           fi
 
-          COMMIT="${{ steps.version.outputs.full_sha }}"
-
-          API_URL_CLEAN="$(printf "%s" "$API_URL" | tr -d '\r\n\t ')"
-          API_KEY_CLEAN="$(printf "%s" "$API_KEY" | tr -d '\r\n\t ')"
-
+          COMMIT="${{ needs.prepare.outputs.full_sha }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
           FINAL_URL="${API_URL_CLEAN}?commitId=${COMMIT}&apiKey=${API_KEY_CLEAN}"
-
-          BUILD_DIR=".pio/build/${{ matrix.env }}"
 
           upload_one () {
             local BIN="$1"
             local KIND="$2"
+            local BOARD="$3"
 
             if [ ! -f "$BIN" ]; then
               echo "Skip: $BIN not found"
               return 0
             fi
 
-            local SHA
-            local SIZE
+            local SHA SIZE
             SHA=$(sha256sum "$BIN" | awk '{print $1}')
             SIZE=$(stat -c%s "$BIN")
 
-            echo "Uploading $KIND (commit=$COMMIT)"
+            echo "Uploading $BOARD/$KIND (version=$VERSION commit=$COMMIT)"
             curl -f -X POST "$FINAL_URL" \
               -H "Authorization: Bearer $API_KEY_CLEAN" \
               -F "file=@${BIN};type=application/octet-stream" \
               -F "kind=$KIND" \
-              -F "version=${{ steps.version.outputs.version }}" \
-              -F "board=${{ matrix.env }}" \
+              -F "version=$VERSION" \
+              -F "board=$BOARD" \
               -F "sha256=$SHA" \
               -F "size=$SIZE"
           }
 
-          upload_one "$BUILD_DIR/firmware.bin" "ota"
-          upload_one "$BUILD_DIR/full_firmware.bin" "full"
+          for BOARD in gateway probe standalone; do
+            DIR="artifacts/firmware-${BOARD}"
+            upload_one "$DIR/firmware.bin"      "ota"  "$BOARD"
+            upload_one "$DIR/full_firmware.bin" "full" "$BOARD"
+          done
