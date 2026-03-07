@@ -1,5 +1,5 @@
-#if !defined(DEVICE_ROLE_PROBE) && !defined(DEVICE_ROLE_GATEWAY)
-#error "You must define DEVICE_ROLE_PROBE or DEVICE_ROLE_GATEWAY in build_flags"
+#if !defined(DEVICE_ROLE_PROBE) && !defined(DEVICE_ROLE_GATEWAY) && !defined(DEVICE_ROLE_STANDALONE)
+#error "You must define DEVICE_ROLE_PROBE, DEVICE_ROLE_GATEWAY, or DEVICE_ROLE_STANDALONE in build_flags"
 #endif
 
 #include <Arduino.h>
@@ -8,8 +8,11 @@
 
 #include "../include/PreferenceService.h"
 #include "../include/SetupService.h"
-#ifdef DEVICE_ROLE_PROBE
+#if defined(DEVICE_ROLE_PROBE)
 #include "../include/ProbeRunService.h"
+#elif defined(DEVICE_ROLE_STANDALONE)
+#include "../include/MqttService.h"
+#include "../include/StandaloneRunService.h"
 #else
 #include "../include/MqttService.h"
 #include "../include/RunService.h"
@@ -23,7 +26,7 @@ WebServer httpServer(80);
 SetupService::Config setupCfg;
 SetupService setupSvc(prefSvc, httpServer, setupCfg);
 
-#ifdef DEVICE_ROLE_PROBE
+#if defined(DEVICE_ROLE_PROBE)
 
 ProbeRunService::Config probeCfg;
 ProbeRunService runSvc(prefSvc, probeCfg);
@@ -68,7 +71,55 @@ void loop()
 
   delay(5);
 }
-#else
+
+#elif defined(DEVICE_ROLE_STANDALONE)
+
+StandaloneRunService::Config standaloneCfg;
+MqttService mqttSvc(standaloneCfg.mqttBase, 8883);
+StandaloneRunService runSvc(prefSvc, mqttSvc, standaloneCfg);
+
+static bool g_runtimeStarted = false;
+
+void setup()
+{
+  Serial.begin(115200);
+  delay(200);
+
+  prefSvc.begin(false);
+
+  if (setupSvc.isSetupComplete())
+  {
+    Serial.println("[BOOT] Setup complete -> starting standalone runtime");
+    runSvc.begin();
+    g_runtimeStarted = true;
+  }
+  else
+  {
+    Serial.println("[BOOT] Setup required -> starting setup service");
+    setupSvc.begin();
+  }
+}
+
+void loop()
+{
+  if (setupSvc.isSetupComplete())
+  {
+    if (!g_runtimeStarted)
+    {
+      runSvc.begin();
+      g_runtimeStarted = true;
+    }
+    runSvc.loop();
+  }
+  else
+  {
+    setupSvc.loop();
+  }
+
+  delay(5);
+}
+
+#else // DEVICE_ROLE_GATEWAY
 
 RunService::Config runCfg;
 MqttService mqttSvc(runCfg.mqttBase, 8883);
@@ -83,7 +134,6 @@ void setup()
 
   prefSvc.begin(false);
 
-  // Decide mode
   if (setupSvc.isSetupComplete())
   {
     Serial.println("[BOOT] Setup complete -> starting runtime");
@@ -103,7 +153,6 @@ void loop()
   {
     if (!g_runtimeStarted)
     {
-      // Setup just completed (or provisioned + reboot not used)
       runSvc.begin();
       g_runtimeStarted = true;
     }
@@ -116,4 +165,5 @@ void loop()
 
   delay(5);
 }
+
 #endif

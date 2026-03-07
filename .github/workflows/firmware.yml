@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [ gateway, probe ]
+        env: [ gateway, probe, standalone ]
 
     steps:
       - name: Checkout
