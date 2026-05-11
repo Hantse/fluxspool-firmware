@@ -16,6 +16,12 @@
 
 StandaloneRunService *StandaloneRunService::_self = nullptr;
 
+static const char *resolvedFirmwareVersion()
+{
+  const char *version = FW_VERSION;
+  return version[0] == '\0' ? "0.0.0" : version;
+}
+
 static bool readFloatField(JsonDocument &doc, const char *key, float &out)
 {
   JsonVariant value = doc[key];
@@ -304,7 +310,7 @@ void StandaloneRunService::publishRegister()
 
   JsonDocument doc;
   doc["chipId"] = String((uint32_t)(ESP.getEfuseMac() >> 32), HEX) + String((uint32_t)ESP.getEfuseMac(), HEX);
-  doc["firmwareVersion"] = FW_VERSION;
+  doc["firmwareVersion"] = resolvedFirmwareVersion();
   doc["macAddress"] = WiFi.macAddress();
   doc["wifiSsid"] = WiFi.SSID();
 
@@ -330,6 +336,7 @@ void StandaloneRunService::publishStatusIfDue()
   doc["wifi"] = (WiFi.status() == WL_CONNECTED);
   doc["rssi"] = WiFi.RSSI();
   doc["heap"] = ESP.getFreeHeap();
+  doc["firmwareVersion"] = resolvedFirmwareVersion();
 
   String payload;
   serializeJson(doc, payload);

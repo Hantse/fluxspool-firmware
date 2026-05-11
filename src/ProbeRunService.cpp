@@ -315,7 +315,8 @@ String ProbeRunService::model() const
 
 String ProbeRunService::firmwareVersion() const
 {
-  return FW_VERSION;
+  const char *version = FW_VERSION;
+  return version[0] == '\0' ? "0.0.0" : version;
 }
 
 void ProbeRunService::onRxStatic(const uint8_t *mac, const uint8_t *data, int len)

@@ -11,9 +11,13 @@
 #define FW_VERSION "0.0.0"
 #endif
 
-const char* firmwareVersion = FW_VERSION;
-
 RunService *RunService::_self = nullptr;
+
+static const char *resolvedFirmwareVersion()
+{
+  const char *version = FW_VERSION;
+  return version[0] == '\0' ? "0.0.0" : version;
+}
 
 RunService::RunService(PreferenceService &prefs, MqttService &mqtt, const Config &cfg)
     : _prefs(prefs), _mqtt(mqtt), _cfg(cfg), _esp(), _ota(_prefs)
@@ -302,7 +306,7 @@ void RunService::publishRegister()
 
   JsonDocument doc;
   doc["chipId"] = String((uint32_t)(ESP.getEfuseMac() >> 32), HEX) + String((uint32_t)ESP.getEfuseMac(), HEX);
-  doc["firmwareVersion"] = firmwareVersion; // keep your existing value if you patch later
+  doc["firmwareVersion"] = resolvedFirmwareVersion();
   doc["macAddress"] = WiFi.macAddress();
   doc["wifiSsid"] = WiFi.SSID();
 
@@ -332,6 +336,7 @@ void RunService::publishStatusIfDue()
   doc["wifi"] = (WiFi.status() == WL_CONNECTED);
   doc["rssi"] = WiFi.RSSI();
   doc["heap"] = ESP.getFreeHeap();
+  doc["firmwareVersion"] = resolvedFirmwareVersion();
 
   String payload;
   serializeJson(doc, payload);
