@@ -271,7 +271,20 @@ void StandaloneRunService::publishCommandResult(const JsonDocument &doc)
   String out;
   serializeJson(doc, out);
   const String t = topicOf("command/result");
-  _mqtt.publish(t.c_str(), out.c_str());
+  const bool ok = _mqtt.publish(t.c_str(), out.c_str());
+
+  Serial.print("[COMMAND] publish result -> ");
+  Serial.print(t);
+  Serial.print(" len=");
+  Serial.print(out.length());
+  Serial.print(" ");
+  Serial.println(ok ? "OK" : "FAIL");
+
+  if (!ok)
+  {
+    Serial.print("[COMMAND] result payload=");
+    Serial.println(out);
+  }
 }
 
 void StandaloneRunService::mqttBeginIfNeeded()
@@ -905,7 +918,21 @@ void StandaloneRunService::publishRfidDetected(const String &uid, const String &
 
   String out;
   serializeJson(doc, out);
-  _mqtt.publish(topicOf("rfid").c_str(), out.c_str());
+  const String t = topicOf("rfid");
+  const bool ok = _mqtt.publish(t.c_str(), out.c_str());
+
+  Serial.print("[RFID] publish detected -> ");
+  Serial.print(t);
+  Serial.print(" len=");
+  Serial.print(out.length());
+  Serial.print(" ");
+  Serial.println(ok ? "OK" : "FAIL");
+
+  if (!ok)
+  {
+    Serial.print("[RFID] detected payload=");
+    Serial.println(out);
+  }
 
   _lastRfidDetectedSignature = signature;
   _lastRfidDetectedPublishMs = nowMs;
@@ -1629,7 +1656,5 @@ void StandaloneRunService::handleOta(const String &correlationId, const String &
   res["ok"] = (r == OtaService::Result::Ok);
   res["status"] = "failed";
   res["errorCode"] = (int)r;
-  String out;
-  serializeJson(res, out);
-  _mqtt.publish(topicOf("command/result").c_str(), out.c_str());
+  publishCommandResult(res);
 }
