@@ -318,6 +318,8 @@ void StandaloneRunService::publishRegister()
   doc["firmwareVersion"] = resolvedFirmwareVersion();
   doc["macAddress"] = WiFi.macAddress();
   doc["wifiSsid"] = WiFi.SSID();
+  doc["scaleTared"] = _scaleTared;
+  doc["scaleCalibrated"] = _scaleCalibrated;
 
   String payload;
   serializeJson(doc, payload);
@@ -342,6 +344,8 @@ void StandaloneRunService::publishStatusIfDue()
   doc["rssi"] = WiFi.RSSI();
   doc["heap"] = ESP.getFreeHeap();
   doc["firmwareVersion"] = resolvedFirmwareVersion();
+  doc["scaleTared"] = _scaleTared;
+  doc["scaleCalibrated"] = _scaleCalibrated;
 
   String payload;
   serializeJson(doc, payload);
@@ -397,6 +401,7 @@ void StandaloneRunService::publishTelemetryIfDue()
 
 void StandaloneRunService::loadScaleCalibration()
 {
+  _scaleTared = _prefs.hasScaleTare();
   const bool hasPersistedCalibration = _prefs.hasScaleCalibration();
   PreferenceService::ScaleCalibration calibration =
       _prefs.loadScaleCalibration(_cfg.hx711Scale, _cfg.hx711Offset);
@@ -552,6 +557,7 @@ bool StandaloneRunService::saveScaleCalibration(float scale, long offset, bool c
 {
   _cfg.hx711Scale = scale;
   _cfg.hx711Offset = offset;
+  _scaleTared = true;
   _scaleCalibrated = calibrated && fabs(scale) >= 0.0001f;
   applyScaleCalibration();
 
@@ -1425,6 +1431,7 @@ void StandaloneRunService::handleScaleTare(const String &correlationId, uint8_t 
   res["ok"] = rawOk && saved;
   res["offset"] = raw;
   res["scale"] = _cfg.hx711Scale;
+  res["tared"] = rawOk && saved;
   res["calibrated"] = _scaleCalibrated;
   res["samples"] = samples;
   if (!(rawOk && saved))
@@ -1442,6 +1449,8 @@ void StandaloneRunService::handleScaleTare(const String &correlationId, uint8_t 
   Serial.print(_cfg.hx711Scale);
   Serial.print(" calibrated=");
   Serial.print(_scaleCalibrated ? "true" : "false");
+  Serial.print(" tared=");
+  Serial.print(_scaleTared ? "true" : "false");
   Serial.print(" saved=");
   Serial.print(saved ? "true" : "false");
   if (!(rawOk && saved))
@@ -1498,6 +1507,7 @@ void StandaloneRunService::handleScaleCalibrate(const String &correlationId, flo
   res["offset"] = _cfg.hx711Offset;
   res["delta"] = delta;
   res["scale"] = _cfg.hx711Scale;
+  res["tared"] = _scaleTared;
   res["calibrated"] = _scaleCalibrated;
   res["samples"] = samples;
   if (!saved)
@@ -1513,6 +1523,7 @@ void StandaloneRunService::handleScaleStatus(const String &correlationId)
   res["ok"] = true;
   res["scale"] = _cfg.hx711Scale;
   res["offset"] = _cfg.hx711Offset;
+  res["tared"] = _scaleTared;
   res["calibrated"] = _scaleCalibrated;
   res["samples"] = _cfg.hx711Samples;
   publishCommandResult(res);

@@ -415,6 +415,13 @@ bool PreferenceService::clearTopologyJson()
 
 // ---------------- Scale calibration ----------------
 
+bool PreferenceService::hasScaleTare() const
+{
+  if (!_started)
+    return false;
+  return _prefs.isKey(K_SCALE_OFFSET);
+}
+
 bool PreferenceService::hasScaleCalibration() const
 {
   if (!_started)

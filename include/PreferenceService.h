@@ -146,6 +146,7 @@ public:
   bool clearTopologyJson();
 
   // Local scale calibration
+  bool hasScaleTare() const;
   bool hasScaleCalibration() const;
   ScaleCalibration loadScaleCalibration(float defaultScale = 1.0f, long defaultOffset = 0) const;
   bool saveScaleCalibration(const ScaleCalibration &calibration);

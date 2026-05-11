@@ -173,6 +173,7 @@ private:
 
   bool _i2cStarted = false;
   bool _scaleStarted = false;
+  bool _scaleTared = false;
   bool _scaleCalibrated = false;
   bool _as7341Started = false;
   bool _gy33Started = false;
