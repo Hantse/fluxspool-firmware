@@ -112,8 +112,8 @@ private:
   bool ensureTcs34725Started();
   bool ensureRfidStarted();
 
-  bool readWeight(float &weightG, long &raw, String &error);
-  bool readWeightWithRetries(float &weightG, long &raw, String &error, uint8_t &attempts);
+  bool readWeight(float &weightG, long &raw, String &error, uint8_t samples);
+  bool readWeightWithRetries(float &weightG, long &raw, String &error, uint8_t &attempts, uint8_t samples);
   bool readScaleRaw(long &raw, String &error, uint8_t samples);
   bool saveScaleCalibration(float scale, long offset, bool calibrated);
   bool readColor(ColorReading &reading, String &error);
@@ -139,7 +139,7 @@ private:
 
   // Command handlers
   void handleScan(const String &correlationId);
-  void handleWeight(const String &correlationId);
+  void handleWeight(const String &correlationId, uint8_t samples);
   void handleScaleTare(const String &correlationId, uint8_t samples);
   void handleScaleCalibrate(const String &correlationId, float referenceWeightG, uint8_t samples);
   void handleScaleStatus(const String &correlationId);

@@ -503,9 +503,9 @@ bool StandaloneRunService::ensureRfidStarted()
   return true;
 }
 
-bool StandaloneRunService::readWeight(float &weightG, long &raw, String &error)
+bool StandaloneRunService::readWeight(float &weightG, long &raw, String &error, uint8_t samples)
 {
-  if (!readScaleRaw(raw, error, _cfg.hx711Samples))
+  if (!readScaleRaw(raw, error, samples))
     return false;
 
   if (!_scaleCalibrated)
@@ -562,7 +562,7 @@ bool StandaloneRunService::saveScaleCalibration(float scale, long offset, bool c
   return _prefs.saveScaleCalibration(calibration);
 }
 
-bool StandaloneRunService::readWeightWithRetries(float &weightG, long &raw, String &error, uint8_t &attempts)
+bool StandaloneRunService::readWeightWithRetries(float &weightG, long &raw, String &error, uint8_t &attempts, uint8_t samples)
 {
   const uint8_t maxAttempts = _cfg.sensorReadRetries == 0 ? 1 : _cfg.sensorReadRetries;
   attempts = 0;
@@ -571,8 +571,32 @@ bool StandaloneRunService::readWeightWithRetries(float &weightG, long &raw, Stri
   {
     attempts = i + 1;
     error = "";
-    if (readWeight(weightG, raw, error))
+    Serial.print("[SCALE] weight attempt=");
+    Serial.print(attempts);
+    Serial.print("/");
+    Serial.print(maxAttempts);
+    Serial.print(" samples=");
+    Serial.println(samples);
+
+    if (readWeight(weightG, raw, error, samples))
+    {
+      Serial.print("[SCALE] weight OK raw=");
+      Serial.print(raw);
+      Serial.print(" offset=");
+      Serial.print(_cfg.hx711Offset);
+      Serial.print(" scale=");
+      Serial.print(_cfg.hx711Scale);
+      Serial.print(" weight_g=");
+      Serial.println(weightG);
       return true;
+    }
+
+    Serial.print("[SCALE] weight FAIL raw=");
+    Serial.print(raw);
+    Serial.print(" calibrated=");
+    Serial.print(_scaleCalibrated ? "true" : "false");
+    Serial.print(" error=");
+    Serial.println(error);
 
     if (i + 1 < maxAttempts)
     {
@@ -1173,7 +1197,7 @@ void StandaloneRunService::onCommand(char *topic, byte *payload, unsigned int le
   }
   else if (cmd == "Weight")
   {
-    handleWeight(correlationId);
+    handleWeight(correlationId, readSamplesField(doc, _cfg.hx711Samples));
   }
   else if (cmd == "ScaleTare" || cmd == "Tare")
   {
@@ -1258,7 +1282,7 @@ void StandaloneRunService::handleScan(const String &correlationId)
   long weightRaw = 0;
   String weightError;
   uint8_t weightAttempts = 0;
-  const bool weightOk = readWeightWithRetries(weightG, weightRaw, weightError, weightAttempts);
+  const bool weightOk = readWeightWithRetries(weightG, weightRaw, weightError, weightAttempts, _cfg.hx711Samples);
 
   ColorReading color;
   String colorError;
@@ -1331,13 +1355,16 @@ void StandaloneRunService::handleScan(const String &correlationId)
   publishCommandResult(res);
 }
 
-void StandaloneRunService::handleWeight(const String &correlationId)
+void StandaloneRunService::handleWeight(const String &correlationId, uint8_t samples)
 {
+  Serial.print("[SCALE] weight requested samples=");
+  Serial.println(samples);
+
   String error;
   float weight_g = 0.0f;
   long raw = 0;
   uint8_t attempts = 0;
-  const bool ok = readWeightWithRetries(weight_g, raw, error, attempts);
+  const bool ok = readWeightWithRetries(weight_g, raw, error, attempts, samples);
 
   JsonDocument res;
   res["correlationId"] = correlationId;
@@ -1354,6 +1381,24 @@ void StandaloneRunService::handleWeight(const String &correlationId)
     res["error"] = error;
   }
 
+  Serial.print("[SCALE] weight result ");
+  Serial.print(ok ? "OK" : "FAIL");
+  Serial.print(" attempts=");
+  Serial.print(attempts);
+  Serial.print(" raw=");
+  Serial.print(raw);
+  if (ok)
+  {
+    Serial.print(" weight_g=");
+    Serial.print(weight_g);
+  }
+  else
+  {
+    Serial.print(" error=");
+    Serial.print(error);
+  }
+  Serial.println();
+
   publishCommandResult(res);
 }
 
@@ -1364,6 +1409,7 @@ void StandaloneRunService::handleScaleTare(const String &correlationId, uint8_t 
 
   String error;
   long raw = 0;
+  const long previousOffset = _cfg.hx711Offset;
   const bool rawOk = readScaleRaw(raw, error, samples);
 
   bool saved = false;
@@ -1386,10 +1432,18 @@ void StandaloneRunService::handleScaleTare(const String &correlationId, uint8_t 
 
   Serial.print("[SCALE] tare ");
   Serial.print(rawOk && saved ? "OK" : "FAIL");
+  Serial.print(" oldOffset=");
+  Serial.print(previousOffset);
   Serial.print(" raw=");
   Serial.print(raw);
+  Serial.print(" newOffset=");
+  Serial.print(_cfg.hx711Offset);
   Serial.print(" scale=");
   Serial.print(_cfg.hx711Scale);
+  Serial.print(" calibrated=");
+  Serial.print(_scaleCalibrated ? "true" : "false");
+  Serial.print(" saved=");
+  Serial.print(saved ? "true" : "false");
   if (!(rawOk && saved))
   {
     Serial.print(" error=");
