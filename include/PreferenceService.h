@@ -44,6 +44,13 @@ public:
     String gatewayHmac; // server-provided identity for gateway
   };
 
+  struct ScaleCalibration
+  {
+    float scale = 1.0f;
+    long offset = 0;
+    bool calibrated = false;
+  };
+
   struct BootFlags
   {
     bool setupDone = false;
@@ -90,6 +97,9 @@ public:
   int32_t getInt(const char *key, int32_t def = 0) const;
   bool setInt(const char *key, int32_t value);
 
+  float getFloat(const char *key, float def = 0.0f) const;
+  bool setFloat(const char *key, float value);
+
   bool getBool(const char *key, bool def = false) const;
   bool setBool(const char *key, bool value);
 
@@ -135,6 +145,12 @@ public:
   bool saveTopologyJson(const String &json);
   bool clearTopologyJson();
 
+  // Local scale calibration
+  bool hasScaleCalibration() const;
+  ScaleCalibration loadScaleCalibration(float defaultScale = 1.0f, long defaultOffset = 0) const;
+  bool saveScaleCalibration(const ScaleCalibration &calibration);
+  bool clearScaleCalibration();
+
   // Debug
   void dumpToSerial(bool includeSecrets = false) const;
 
@@ -178,6 +194,11 @@ private:
   static constexpr const char *K_PNOW_LMK = "pnow_lmk";
   static constexpr const char *K_PNOW_GWHMAC = "pnow_gwhmac";
   static constexpr const char *K_PNOW_SEQ = "pnow_seq";
+
+  // Scale calibration
+  static constexpr const char *K_SCALE_SCALE = "sc_scale";
+  static constexpr const char *K_SCALE_OFFSET = "sc_offset";
+  static constexpr const char *K_SCALE_CAL = "sc_cal";
 
 private:
   const char *_ns;

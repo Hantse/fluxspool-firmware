@@ -91,6 +91,21 @@ bool PreferenceService::setInt(const char *key, int32_t value)
   return true;
 }
 
+float PreferenceService::getFloat(const char *key, float def) const
+{
+  if (!_started)
+    return def;
+  return _prefs.getFloat(key, def);
+}
+
+bool PreferenceService::setFloat(const char *key, float value)
+{
+  if (!_started)
+    return false;
+  _prefs.putFloat(key, value);
+  return true;
+}
+
 bool PreferenceService::getBool(const char *key, bool def) const
 {
   if (!_started)
@@ -396,6 +411,42 @@ bool PreferenceService::saveTopologyJson(const String &json)
 bool PreferenceService::clearTopologyJson()
 {
   return removeKey(K_TOPOLOGY_JSON);
+}
+
+// ---------------- Scale calibration ----------------
+
+bool PreferenceService::hasScaleCalibration() const
+{
+  if (!_started)
+    return false;
+  return _prefs.isKey(K_SCALE_SCALE) && _prefs.isKey(K_SCALE_OFFSET) && getBool(K_SCALE_CAL, false);
+}
+
+PreferenceService::ScaleCalibration PreferenceService::loadScaleCalibration(float defaultScale, long defaultOffset) const
+{
+  ScaleCalibration calibration;
+  calibration.scale = getFloat(K_SCALE_SCALE, defaultScale);
+  calibration.offset = (long)getInt(K_SCALE_OFFSET, (int32_t)defaultOffset);
+  calibration.calibrated = getBool(K_SCALE_CAL, false);
+  return calibration;
+}
+
+bool PreferenceService::saveScaleCalibration(const ScaleCalibration &calibration)
+{
+  bool ok = true;
+  ok &= setFloat(K_SCALE_SCALE, calibration.scale);
+  ok &= setInt(K_SCALE_OFFSET, (int32_t)calibration.offset);
+  ok &= setBool(K_SCALE_CAL, calibration.calibrated);
+  return ok;
+}
+
+bool PreferenceService::clearScaleCalibration()
+{
+  bool ok = false;
+  ok |= removeKey(K_SCALE_SCALE);
+  ok |= removeKey(K_SCALE_OFFSET);
+  ok |= removeKey(K_SCALE_CAL);
+  return ok;
 }
 
 // Probe
