@@ -22,6 +22,11 @@ static const char *resolvedFirmwareVersion()
   return version[0] == '\0' ? "0.0.0" : version;
 }
 
+static bool isSoftRebootCommand(const String &cmd)
+{
+  return cmd == "reboot" || cmd == "Reboot" || cmd == "reset" || cmd == "Reset";
+}
+
 static bool readFloatField(JsonDocument &doc, const char *key, float &out)
 {
   JsonVariant value = doc[key];
@@ -1214,6 +1219,20 @@ void StandaloneRunService::onCommand(char *topic, byte *payload, unsigned int le
   {
     handleRfidDetectMode(correlationId, false);
   }
+  else if (isSoftRebootCommand(cmd))
+  {
+    JsonDocument res;
+    res["correlationId"] = correlationId;
+    res["ok"] = true;
+    res["status"] = "rebooting";
+    publishCommandResult(res);
+
+    Serial.println("[COMMAND] Soft reboot requested");
+    _mqtt.loop();
+    delay(250);
+    Serial.flush();
+    ESP.restart();
+  }
   else
   {
     JsonDocument res;
@@ -1340,6 +1359,9 @@ void StandaloneRunService::handleWeight(const String &correlationId)
 
 void StandaloneRunService::handleScaleTare(const String &correlationId, uint8_t samples)
 {
+  Serial.print("[SCALE] tare requested samples=");
+  Serial.println(samples);
+
   String error;
   long raw = 0;
   const bool rawOk = readScaleRaw(raw, error, samples);
@@ -1361,6 +1383,19 @@ void StandaloneRunService::handleScaleTare(const String &correlationId, uint8_t 
   res["samples"] = samples;
   if (!(rawOk && saved))
     res["error"] = error;
+
+  Serial.print("[SCALE] tare ");
+  Serial.print(rawOk && saved ? "OK" : "FAIL");
+  Serial.print(" raw=");
+  Serial.print(raw);
+  Serial.print(" scale=");
+  Serial.print(_cfg.hx711Scale);
+  if (!(rawOk && saved))
+  {
+    Serial.print(" error=");
+    Serial.print(error);
+  }
+  Serial.println();
 
   publishCommandResult(res);
 }
